@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 
+from lib2to3.pgen2 import token
 import sys
 import os
 from rosbags.rosbag2 import Reader
@@ -56,29 +57,93 @@ def write_scene(rosbag_file, track_name):
                 lvms_data['category'] = 'LVMS'
                 lvms_data['filename'] = '' # TODO: double check we aren't including map mask
                 json.dump([ims_data, lvms_data], outfile, ensure_ascii=False, indent=4)
+        # Create sensor.json
+        with open('sensor.json', 'w', encoding='utf-8') as outfile:
+            # Combined lidar topic
+            lidar_all = dict()
+            lidar_all['token'] = token_hex(16)
+            lidar_all['channel'] = 'LUMINAR_POINTS'
+            lidar_all['modality'] = 'lidar'
+            # Front lidar topic
+            lidar_front = dict()
+            lidar_front['token'] = token_hex(16)
+            lidar_front['channel'] = 'LUMINAR_FRONT'
+            lidar_front['modality'] = 'lidar'
+            # Left lidar topic
+            lidar_left = dict()
+            lidar_left['token'] = token_hex(16)
+            lidar_left['channel'] = 'LUMINAR_LEFT'
+            lidar_left['modality'] = 'lidar'
+            # Right lidar topic
+            lidar_right = dict()
+            lidar_right['token'] = token_hex(16)
+            lidar_right['channel'] = 'LUMINAR_RIGHT'
+            lidar_right['modality'] = 'lidar'
+
+            json.dump([lidar_all, lidar_front, lidar_left, lidar_right], outfile, ensure_ascii=False, indent=4)
+        # Create calibrated_sensor.json
+        with open('calibrated_sensor.json', 'w', encoding='utf-8') as outfile:
+            # TODO: check if combined lidar topic or separated
+            data = dict()
+            data['token'] = token_hex(16)
+            data['sensor_token'] = ''
+            data['translation'] = [0.0, 0.0, 0.0]
+            data['rotation'] = [0.0, 0.0, 0.0, 1.0]
+            data['camera_instrinsic'] = []
+            json.dump(data, outfile, ensure_ascii=False, indent=4)
+        # Create remaining json files
         connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom' or x.topic == '/luminar_points')]
-        # Create sample.json
-        # TODO: Case where sample.json already exists
+        # TODO: Case where json files already exists
         first_scene, last_scene = '', ''
-        prev_scene, next_scene = '', ''
+        prev_scene, next_scene = '', token_hex(16)
         scene_token = token_hex(16)
         samples = []
-        with open('sample.json', 'w', encoding='utf-8') as outfile:
-            for connection, timestamp, rawdata in reader.messages(connections=connections):
+        sample_data = []
+        ego_poses = []
+        sample_json = open('sample.json', 'w', encoding='utf-8')
+        sampledata_json = open('sample_data.json', 'w', encoding='utf-8')
+        egopose_json = open('ego_pose.json', 'w', encoding='utf-8')
+        for connection, timestamp, rawdata in reader.messages(connections=connections):
+            # Create sample.json
+            data = dict()
+            sample_token = next_scene
+            data['token'] = sample_token
+            data['timestamp'] = timestamp
+            data['scene_token'] = scene_token
+            data['prev'] = prev_scene
+            prev_scene = next_scene
+            next_scene = token_hex(16)
+            data['next'] = next_scene  
+            samples.append(data)
+            # Create ego_pose.json
+            if connection.topic == '/novatel_top/dyntf_odom':
+                msg  = deserialize_cdr(rawdata, connection.msgtype)
                 data = dict()
+                ego_pose_token = token_hex(16)
+                data['token'] = ego_pose_token
                 data['timestamp'] = timestamp
-                data['scene_token'] = scene_token
-                data['prev'] = prev_scene
-                prev_scene = next_scene
-                next_scene = token_hex(16)
-                data['next'] = next_scene  
-                if first_scene == '':
-                    prev_scene = token_hex(16)
-                    first_scene = prev_scene
-                samples.append(data)
-            samples[-1]['next'] = ''
-            json.dump(samples, outfile, ensure_ascii=False, indent=4)
+                data['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
+                data['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
+                ego_poses.append(data)
+
+            # Create sample_data.json
+            if connection.topic == '/novatel_top/dyntf_odom':
+                msg  = deserialize_cdr(rawdata, connection.msgtype)
+                data = dict()
+                data['token'] = token_hex(16)
+                data['sample_token'] = prev_scene
+                data['ego_pose_token'] = ego_pose_token
+                data['calibrated_sensor_token'] = 'TODO'
+
+
+
+        samples[-1]['next'] = ''
+        json.dump(samples, sample_json, ensure_ascii=False, indent=4)
+        json.dump(ego_poses, egopose_json, ensure_ascii=False, indent=4)
         last_scene = prev_scene
+        sample_json.close()
+        egopose_json.close()
+        sampledata_json.close()
                 
 
                 
