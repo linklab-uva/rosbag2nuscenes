@@ -175,7 +175,6 @@ def write_scene(rosbag_file, track_name):
                 data['next'] = next_sample
                 sample_data.append(data)
 
-
         samples[-1]['next'] = ''
         sample_data[-1]['next'] = ''
         json.dump(samples, sample_json, ensure_ascii=False, indent=4)
@@ -186,11 +185,6 @@ def write_scene(rosbag_file, track_name):
         egopose_json.close()
         sampledata_json.close()
                 
-
-                
-                # if connection.topic == '/novatel_top/dyntf_odom':
-                #     msg = deserialize_cdr(rawdata, connection.msgtype)
-                #     print(msg.header)
         # Create scene.json
         with open('scene.json', 'w', encoding='utf-8') as outfile:
             data = dict()
