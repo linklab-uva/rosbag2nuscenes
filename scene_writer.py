@@ -96,7 +96,6 @@ def write_scene(rosbag_file, track_name):
             data['camera_instrinsic'] = []
             json.dump(data, outfile, ensure_ascii=False, indent=4)
         # Create remaining json files
-        connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom' or x.topic == '/luminar_points')]
         # TODO: Case where json files already exists
         first_scene, last_scene = '', ''
         prev_scene, next_scene = '', token_hex(16)
@@ -110,6 +109,22 @@ def write_scene(rosbag_file, track_name):
         egopose_json = open('ego_pose.json', 'w', encoding='utf-8')
         if not os.path.exists('samples'):
             os.makedirs('samples')
+        connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom')]
+        ego_pose_queue = []
+        print("Serializing ego poses")
+        for connection, timestamp, rawdata in tqdm(reader.messages(connections=connections)):
+            # Create ego_pose.json
+            msg  = deserialize_cdr(rawdata, connection.msgtype)
+            ego_pose = dict()
+            ego_pose_token = token_hex(16)
+            ego_pose_queue.append((ego_pose_token, timestamp))
+            ego_pose['token'] = ego_pose_token
+            ego_pose['timestamp'] = timestamp
+            ego_pose['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
+            ego_pose['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
+            ego_poses.append(ego_pose)
+        connections = [x for x in reader.connections.values() if (x.topic == '/luminar_points')]
+        print("Serializing lidar data")
         for connection, timestamp, rawdata in tqdm(reader.messages(connections=connections)):
             # Create sample.json
             sample = dict()
@@ -122,58 +137,56 @@ def write_scene(rosbag_file, track_name):
             next_scene = token_hex(16)
             sample['next'] = next_scene  
             samples.append(sample)
-            # Create ego_pose.json
-            if connection.topic == '/novatel_top/dyntf_odom':
-                msg  = deserialize_cdr(rawdata, connection.msgtype)
-                ego_pose = dict()
-                ego_pose_token = token_hex(16)
-                ego_pose['token'] = ego_pose_token
-                ego_pose['timestamp'] = timestamp
-                ego_pose['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
-                ego_pose['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
-                ego_poses.append(ego_pose)
 
             # Create sample_data.json
-            if connection.topic == '/luminar_points':
-                ros2_msg  = deserialize_cdr(rawdata, connection.msgtype)
-                msg = PointCloud2()
-                msg.data =ros2_msg.data
-                msg.fields = ros2_msg.fields
-                msg.header = ros2_msg.header
-                msg.height = ros2_msg.height
-                msg.is_bigendian = ros2_msg.is_bigendian
-                msg.is_dense = ros2_msg.is_dense
-                msg.point_step = ros2_msg.point_step
-                msg.row_step = ros2_msg.row_step
-                msg.width = ros2_msg.width
-                data = dict()
-                data_token = token_hex(16)
-                data['token'] = data_token
-                data['sample_token'] = prev_scene
-                data['ego_pose_token'] = ego_pose_token
-                data['calibrated_sensor_token'] = 'TODO'
-                
-                points_list = []
+            ros2_msg  = deserialize_cdr(rawdata, connection.msgtype)
+            msg = PointCloud2()
+            msg.data =ros2_msg.data
+            msg.fields = ros2_msg.fields
+            msg.header = ros2_msg.header
+            msg.height = ros2_msg.height
+            msg.is_bigendian = ros2_msg.is_bigendian
+            msg.is_dense = ros2_msg.is_dense
+            msg.point_step = ros2_msg.point_step
+            msg.row_step = ros2_msg.row_step
+            msg.width = ros2_msg.width
+            data = dict()
+            data_token = token_hex(16)
+            data['token'] = data_token
+            data['sample_token'] = prev_scene
+            # Find closest ego pose
+            previous_time_difference = np.inf
+            for i in range(len(ego_pose_queue)):
+                time_difference = abs((datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(ego_pose_queue[i][1] * 1e-9)).total_seconds())
+                if time_difference < previous_time_difference:
+                    previous_time_difference = time_difference
+                else:
+                    ego_pose_token = ego_pose_queue[i-1]
+                    break
+            data['ego_pose_token'] = ego_pose_token
+            data['calibrated_sensor_token'] = 'TODO'
+            
+            points_list = []
 
-                for point in pc2.read_points(msg, skip_nans=True):
-                    points_list.append([point[0], point[1], point[2], point[3]])
+            for point in pc2.read_points(msg, skip_nans=True):
+                points_list.append([point[0], point[1], point[2], point[3]])
 
-                pcl_data = pcl.PointCloud_PointXYZRGB()
-                pcl_data.from_list(points_list)
+            pcl_data = pcl.PointCloud_PointXYZRGB()
+            pcl_data.from_list(points_list)
 
-                filename = "samples/{0}.pcd".format(data_token)
-                pcl.save(pcl_data, filename)
-                data['filename'] = filename
-                data['fileformat'] = 'pcd'
-                data['is_key_frame'] = 'TODO'
-                data['height'] = 0
-                data['width'] = 0
-                data['timestamp'] = timestamp
-                data['prev'] = prev_sample
-                prev_sample = next_sample
-                next_sample = token_hex(16)
-                data['next'] = next_sample
-                sample_data.append(data)
+            filename = "samples/{0}.pcd".format(data_token)
+            pcl.save(pcl_data, filename)
+            data['filename'] = filename
+            data['fileformat'] = 'pcd'
+            data['is_key_frame'] = 'TODO'
+            data['height'] = 0
+            data['width'] = 0
+            data['timestamp'] = timestamp
+            data['prev'] = prev_sample
+            prev_sample = next_sample
+            next_sample = token_hex(16)
+            data['next'] = next_sample
+            sample_data.append(data)
 
         samples[-1]['next'] = ''
         sample_data[-1]['next'] = ''
