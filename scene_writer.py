@@ -1,13 +1,17 @@
-#! /usr/bin/env python
+#! /usr/bin/python3
 
-from lib2to3.pgen2 import token
 import sys
 import os
 from rosbags.rosbag2 import Reader
+import pcl
+import numpy as np
+import sensor_msgs.point_cloud2 as pc2
+from sensor_msgs.msg import PointCloud2
 from rosbags.serde import deserialize_cdr
 from secrets import token_hex
 import json
 from datetime import datetime
+from tqdm import tqdm
 
 allowable_tracks = {'LVMS', 'IMS'}
 
@@ -96,6 +100,7 @@ def write_scene(rosbag_file, track_name):
         # TODO: Case where json files already exists
         first_scene, last_scene = '', ''
         prev_scene, next_scene = '', token_hex(16)
+        prev_sample, next_sample = '', token_hex(16)
         scene_token = token_hex(16)
         samples = []
         sample_data = []
@@ -103,43 +108,79 @@ def write_scene(rosbag_file, track_name):
         sample_json = open('sample.json', 'w', encoding='utf-8')
         sampledata_json = open('sample_data.json', 'w', encoding='utf-8')
         egopose_json = open('ego_pose.json', 'w', encoding='utf-8')
-        for connection, timestamp, rawdata in reader.messages(connections=connections):
+        if not os.path.exists('samples'):
+            os.makedirs('samples')
+        for connection, timestamp, rawdata in tqdm(reader.messages(connections=connections)):
             # Create sample.json
-            data = dict()
+            sample = dict()
             sample_token = next_scene
-            data['token'] = sample_token
-            data['timestamp'] = timestamp
-            data['scene_token'] = scene_token
-            data['prev'] = prev_scene
+            sample['token'] = sample_token
+            sample['timestamp'] = timestamp
+            sample['scene_token'] = scene_token
+            sample['prev'] = prev_scene
             prev_scene = next_scene
             next_scene = token_hex(16)
-            data['next'] = next_scene  
-            samples.append(data)
+            sample['next'] = next_scene  
+            samples.append(sample)
             # Create ego_pose.json
             if connection.topic == '/novatel_top/dyntf_odom':
                 msg  = deserialize_cdr(rawdata, connection.msgtype)
-                data = dict()
+                ego_pose = dict()
                 ego_pose_token = token_hex(16)
-                data['token'] = ego_pose_token
-                data['timestamp'] = timestamp
-                data['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
-                data['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
-                ego_poses.append(data)
+                ego_pose['token'] = ego_pose_token
+                ego_pose['timestamp'] = timestamp
+                ego_pose['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
+                ego_pose['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
+                ego_poses.append(ego_pose)
 
             # Create sample_data.json
-            if connection.topic == '/novatel_top/dyntf_odom':
-                msg  = deserialize_cdr(rawdata, connection.msgtype)
+            if connection.topic == '/luminar_points':
+                ros2_msg  = deserialize_cdr(rawdata, connection.msgtype)
+                msg = PointCloud2()
+                msg.data =ros2_msg.data
+                msg.fields = ros2_msg.fields
+                msg.header = ros2_msg.header
+                msg.height = ros2_msg.height
+                msg.is_bigendian = ros2_msg.is_bigendian
+                msg.is_dense = ros2_msg.is_dense
+                msg.point_step = ros2_msg.point_step
+                msg.row_step = ros2_msg.row_step
+                msg.width = ros2_msg.width
                 data = dict()
-                data['token'] = token_hex(16)
+                data_token = token_hex(16)
+                data['token'] = data_token
                 data['sample_token'] = prev_scene
                 data['ego_pose_token'] = ego_pose_token
                 data['calibrated_sensor_token'] = 'TODO'
+                
+                points_list = []
 
+                for point in pc2.read_points(msg, skip_nans=True):
+                    points_list.append([point[0], point[1], point[2], point[3]])
+
+                pcl_data = pcl.PointCloud_PointXYZRGB()
+                pcl_data.from_list(points_list)
+
+                filename = "samples/{0}.pcd".format(data_token)
+                pcl.save(pcl_data, filename)
+                data['filename'] = filename
+                data['fileformat'] = 'pcd'
+                data['is_key_frame'] = 'TODO'
+                data['height'] = 0
+                data['width'] = 0
+                data['timestamp'] = timestamp
+                data['prev'] = prev_sample
+                prev_sample = next_sample
+                next_sample = token_hex(16)
+                data['next'] = next_sample
+                sample_data.append(data)
 
 
         samples[-1]['next'] = ''
+        sample_data[-1]['next'] = ''
         json.dump(samples, sample_json, ensure_ascii=False, indent=4)
         json.dump(ego_poses, egopose_json, ensure_ascii=False, indent=4)
+        json.dump(sample_data, sampledata_json, ensure_ascii=False, indent=4)
         last_scene = prev_scene
         sample_json.close()
         egopose_json.close()
