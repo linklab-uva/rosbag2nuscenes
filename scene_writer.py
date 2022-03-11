@@ -57,14 +57,14 @@ def write_scene(rosbag_file):
                 if track_name == 'IMS':
                     ims_data['log_tokens'].append(log_token)
                 ims_data['category'] = 'IMS'
-                ims_data['filename'] = '' # TODO: double check we aren't including map mask
+                ims_data['filename'] = '' 
                 lvms_data = dict()
                 lvms_data['token'] = token_hex(16)
                 lvms_data['log_tokens'] = []
                 if track_name == 'LVMS':
                     lvms_data['log_tokens'].append(log_token)
                 lvms_data['category'] = 'LVMS'
-                lvms_data['filename'] = '' # TODO: double check we aren't including map mask
+                lvms_data['filename'] = ''
                 json.dump([ims_data, lvms_data], outfile, indent=4)
         # Create sensor.json
         if not os.path.exists('sensor.json'):
