@@ -15,14 +15,19 @@ from tqdm import tqdm
 
 allowable_tracks = {'LVMS', 'IMS'}
 
-def write_scene(rosbag_file, track_name):
-    if track_name not in allowable_tracks:
-        print("Track name not recognized, must be LVMS or IMS")
-        exit(1)
+def write_scene(rosbag_file):
+    track_num = ''
+    while (track_num != '1' and track_num != '2'):
+        track_num = input("Possible tracks\n\t[1] IMS\n\t[2] LVMS\nSelect track number: ")
+    if track_num == '1':
+        track_name = "IMS"
+    else:
+        track_name = "LVMS"
+    description = input("Enter a short description of the bag file scenario: ")
     with Reader(rosbag_file) as reader:
         # Create log.json
         log_token = token_hex(16)
-        with open('log.json', 'w', encoding='utf-8') as outfile:
+        with open('log.json', 'a', encoding='utf-8') as outfile:
             data = dict()
             data['token'] = log_token
             data['logfile'] = ''
@@ -30,7 +35,7 @@ def write_scene(rosbag_file, track_name):
             date_captured = datetime.fromtimestamp(reader.start_time * 1e-9).strftime('%Y-%m-%d')
             data['date_captured'] = date_captured
             data['location'] = track_name
-            json.dump([data], outfile, ensure_ascii=False, indent=4)
+            json.dump([data], outfile, indent=4)
         # Create map.json
         # Case where map file exists
         if os.path.exists('map.json'):
@@ -42,7 +47,7 @@ def write_scene(rosbag_file, track_name):
                     object['log_tokens'].append(log_token)
                 new_json.append(object)
             with open('map.json', 'w') as outfile:
-                json.dump(new_json, outfile, ensure_ascii=False, indent=4)
+                json.dump(new_json, outfile, indent=4)
         else:
         # Case where map.json does not exist
             with open('map.json', 'w', encoding='utf-8') as outfile:
@@ -52,51 +57,80 @@ def write_scene(rosbag_file, track_name):
                 if track_name == 'IMS':
                     ims_data['log_tokens'].append(log_token)
                 ims_data['category'] = 'IMS'
-                ims_data['filename'] = '' # TODO: double check we aren't including map mask
+                ims_data['filename'] = '' 
                 lvms_data = dict()
                 lvms_data['token'] = token_hex(16)
                 lvms_data['log_tokens'] = []
                 if track_name == 'LVMS':
                     lvms_data['log_tokens'].append(log_token)
                 lvms_data['category'] = 'LVMS'
-                lvms_data['filename'] = '' # TODO: double check we aren't including map mask
-                json.dump([ims_data, lvms_data], outfile, ensure_ascii=False, indent=4)
+                lvms_data['filename'] = ''
+                json.dump([ims_data, lvms_data], outfile, indent=4)
         # Create sensor.json
-        with open('sensor.json', 'w', encoding='utf-8') as outfile:
-            # Combined lidar topic
-            lidar_all = dict()
-            lidar_all['token'] = token_hex(16)
-            lidar_all['channel'] = 'LUMINAR_POINTS'
-            lidar_all['modality'] = 'lidar'
-            # Front lidar topic
-            lidar_front = dict()
-            lidar_front['token'] = token_hex(16)
-            lidar_front['channel'] = 'LUMINAR_FRONT'
-            lidar_front['modality'] = 'lidar'
-            # Left lidar topic
-            lidar_left = dict()
-            lidar_left['token'] = token_hex(16)
-            lidar_left['channel'] = 'LUMINAR_LEFT'
-            lidar_left['modality'] = 'lidar'
-            # Right lidar topic
-            lidar_right = dict()
-            lidar_right['token'] = token_hex(16)
-            lidar_right['channel'] = 'LUMINAR_RIGHT'
-            lidar_right['modality'] = 'lidar'
+        if not os.path.exists('sensor.json'):
+            with open('sensor.json', 'w', encoding='utf-8') as outfile:
+                # Front lidar topic
+                lidar_front = dict()
+                front_token = token_hex(16)
+                lidar_front['token'] = front_token
+                lidar_front['channel'] = 'LUMINAR_FRONT'
+                lidar_front['modality'] = 'lidar'
+                # Left lidar topic
+                lidar_left = dict()
+                left_token = token_hex(16)
+                lidar_left['token'] = left_token
+                lidar_left['channel'] = 'LUMINAR_LEFT'
+                lidar_left['modality'] = 'lidar'
+                # Right lidar topic
+                lidar_right = dict()
+                right_token = token_hex(16)
+                lidar_right['token'] = right_token
+                lidar_right['channel'] = 'LUMINAR_RIGHT'
+                lidar_right['modality'] = 'lidar'
 
-            json.dump([lidar_all, lidar_front, lidar_left, lidar_right], outfile, ensure_ascii=False, indent=4)
+                json.dump([lidar_front, lidar_left, lidar_right], outfile, indent=4)
+        else:
+            with open('sensor.json', 'r', encoding='utf-8') as readfile:
+                sensors = json.load(readfile)
+                for sensor in sensors:
+                    if sensor['channel'] == 'LUMINAR_FRONT':
+                        front_token = sensor['token']
+                    elif sensor['channel'] == 'LUMINAR_LEFT':
+                        left_token = sensor['token']
+                    elif sensor['channel'] == 'LUMINAR_FRONT':
+                        right_token = sensor['token']
         # Create calibrated_sensor.json
-        with open('calibrated_sensor.json', 'w', encoding='utf-8') as outfile:
-            # TODO: check if combined lidar topic or separated
-            data = dict()
-            data['token'] = token_hex(16)
-            data['sensor_token'] = ''
-            data['translation'] = [0.0, 0.0, 0.0]
-            data['rotation'] = [0.0, 0.0, 0.0, 1.0]
-            data['camera_instrinsic'] = []
-            json.dump(data, outfile, ensure_ascii=False, indent=4)
+        with open('calibrated_sensor.json', 'a', encoding='utf-8') as outfile:
+            for connection, timestamp, rawdata in reader.messages(connections=[[x for x in reader.connections.values() if (x.topic == '/tf_static')][0]]):
+                msg = deserialize_cdr(rawdata, connection.msgtype)
+                new_json = []
+                for transform in msg.transforms:
+                    if transform.child_frame_id == 'luminar_front':
+                        data = dict()
+                        data['token'] = token_hex(16)
+                        data['sensor_token'] = front_token
+                        data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
+                        data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
+                        data['camera_instrinsic'] = []
+                    elif transform.child_frame_id == 'luminar_left':
+                        data = dict()
+                        data['token'] = token_hex(16)
+                        data['sensor_token'] = left_token
+                        data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
+                        data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
+                    elif transform.child_frame_id == 'luminar_right':
+                        data = dict()
+                        data['token'] = token_hex(16)
+                        data['sensor_token'] = right_token
+                        data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
+                        data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
+                    else:
+                        continue
+                    new_json.append(data)
+                break
+            json.dump(new_json, outfile, indent=4)
         # Create remaining json files
-        # TODO: Case where json files already exists
+        connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom' or x.topic == '/luminar_points')]
         first_scene, last_scene = '', ''
         prev_scene, next_scene = '', token_hex(16)
         prev_sample, next_sample = '', token_hex(16)
@@ -104,9 +138,9 @@ def write_scene(rosbag_file, track_name):
         samples = []
         sample_data = []
         ego_poses = []
-        sample_json = open('sample.json', 'w', encoding='utf-8')
-        sampledata_json = open('sample_data.json', 'w', encoding='utf-8')
-        egopose_json = open('ego_pose.json', 'w', encoding='utf-8')
+        sample_json = open('sample.json', 'a', encoding='utf-8')
+        sampledata_json = open('sample_data.json', 'a', encoding='utf-8')
+        egopose_json = open('ego_pose.json', 'a', encoding='utf-8')
         if not os.path.exists('samples'):
             os.makedirs('samples')
         connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom')]
@@ -190,9 +224,9 @@ def write_scene(rosbag_file, track_name):
 
         samples[-1]['next'] = ''
         sample_data[-1]['next'] = ''
-        json.dump(samples, sample_json, ensure_ascii=False, indent=4)
-        json.dump(ego_poses, egopose_json, ensure_ascii=False, indent=4)
-        json.dump(sample_data, sampledata_json, ensure_ascii=False, indent=4)
+        json.dump(samples, sample_json, indent=4)
+        json.dump(ego_poses, egopose_json, indent=4)
+        json.dump(sample_data, sampledata_json, indent=4)
         last_scene = prev_scene
         sample_json.close()
         egopose_json.close()
@@ -208,15 +242,18 @@ def write_scene(rosbag_file, track_name):
             first_scene, last_scene = token_hex(16), token_hex(16)
             data['first_sample_token'] = first_scene
             data['last_sample_token'] = last_scene
-            data['name'] = 'scene-0001'  # TODO: increase global variable to create name
-            data['description'] = track_name
-            json.dump([data], outfile, ensure_ascii=False, indent=4)
+            if rosbag_file[-1] == '/':
+                rosbag_file = rosbag_file[:-1]
+            data['name'] = rosbag_file.split('/')[-1]
+            data['description'] = description
+            json.dump([data], outfile, indent=4)
 
 if __name__=="__main__":
-    if len(sys.argv) != 3:
-        print("Expecting: [rosbag path] [track name]")
+    if len(sys.argv) != 2:
+        print("Expecting: [rosbag path]")
         print("Got: ", end='')
         for arg in sys.argv:
             print(arg, end='')
+        print('\n')
         exit(1)
-    write_scene(sys.argv[1], sys.argv[2])
+    write_scene(sys.argv[1])
