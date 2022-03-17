@@ -30,7 +30,9 @@ def write_scene(rosbag_file):
         with open('log.json', 'a', encoding='utf-8') as outfile:
             data = dict()
             data['token'] = log_token
-            data['logfile'] = ''
+            if rosbag_file[-1] == '/':
+                rosbag_file = rosbag_file[:-1]
+            data['logfile'] = rosbag_file.split('/')[-1]
             data['vehicle'] = 'Cavalier'
             date_captured = datetime.fromtimestamp(reader.start_time * 1e-9).strftime('%Y-%m-%d')
             data['date_captured'] = date_captured
@@ -101,33 +103,43 @@ def write_scene(rosbag_file):
                         right_token = sensor['token']
         # Create calibrated_sensor.json
         with open('calibrated_sensor.json', 'a', encoding='utf-8') as outfile:
-            for connection, timestamp, rawdata in reader.messages(connections=[[x for x in reader.connections.values() if (x.topic == '/tf_static')][0]]):
+            frames_received = []
+            for connection, timestamp, rawdata in reader.messages(connections=[x for x in reader.connections.values() if (x.topic == '/tf_static')]):
                 msg = deserialize_cdr(rawdata, connection.msgtype)
                 new_json = []
                 for transform in msg.transforms:
-                    if transform.child_frame_id == 'luminar_front':
+                    if transform.child_frame_id == 'luminar_front' and 'luminar_front' not in frames_received:
                         data = dict()
-                        data['token'] = token_hex(16)
+                        front_calibrated_sensor_token = token_hex(16)
+                        data['token'] = front_calibrated_sensor_token
                         data['sensor_token'] = front_token
                         data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
                         data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
                         data['camera_instrinsic'] = []
-                    elif transform.child_frame_id == 'luminar_left':
+                        frames_received.append('luminar_front')
+                    elif transform.child_frame_id == 'luminar_left' and 'luminar_left' not in frames_received:
                         data = dict()
-                        data['token'] = token_hex(16)
+                        left_calibrated_sensor_token = token_hex(16)
+                        data['token'] = left_calibrated_sensor_token
                         data['sensor_token'] = left_token
                         data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
                         data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
-                    elif transform.child_frame_id == 'luminar_right':
+                        data['camera_instrinsic'] = []
+                        frames_received.append('luminar_left')
+                    elif transform.child_frame_id == 'luminar_right' and 'luminar_right' not in frames_received:
                         data = dict()
-                        data['token'] = token_hex(16)
+                        right_calibrated_sensor_token = token_hex(16)
+                        data['token'] = right_calibrated_sensor_token
                         data['sensor_token'] = right_token
                         data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
                         data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
+                        data['camera_instrinsic'] = []
+                        frames_received.append('luminar_right')
                     else:
                         continue
                     new_json.append(data)
-                break
+                if len(frames_received) == 3:
+                    break
             json.dump(new_json, outfile, indent=4)
         # Create remaining json files
         connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom' or x.topic == '/luminar_points')]
@@ -157,7 +169,7 @@ def write_scene(rosbag_file):
             ego_pose['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
             ego_pose['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
             ego_poses.append(ego_pose)
-        connections = [x for x in reader.connections.values() if (x.topic == '/luminar_points')]
+        connections = [x for x in reader.connections.values() if (x.topic == '/luminar_front_points' or x.topic == '/luminar_left_points' or x.topic == '/luminar_right_points')]
         print("Serializing lidar data")
         for connection, timestamp, rawdata in tqdm(reader.messages(connections=connections)):
             # Create sample.json
@@ -198,8 +210,13 @@ def write_scene(rosbag_file):
                     ego_pose_token = ego_pose_queue[i-1]
                     break
             data['ego_pose_token'] = ego_pose_token
-            data['calibrated_sensor_token'] = 'TODO'
-            
+            if connection.topic == '/luminar_front_points':
+                data['calibrated_sensor_token'] = front_calibrated_sensor_token
+            elif connection.topic == '/luminar_left_points':
+                data['calibrated_sensor_token'] = left_calibrated_sensor_token
+            else:
+                data['calibrated_sensor_token'] = right_calibrated_sensor_token
+       
             points_list = []
 
             for point in pc2.read_points(msg, skip_nans=True):
