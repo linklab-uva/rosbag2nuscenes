@@ -209,7 +209,7 @@ def write_scene(rosbag_file):
                 else:
                     ego_pose_token = ego_pose_queue[i-1]
                     break
-            data['ego_pose_token'] = ego_pose_token
+            data['ego_pose_token'] = ego_pose_token[0]
             if connection.topic == '/luminar_front_points':
                 data['calibrated_sensor_token'] = front_calibrated_sensor_token
             elif connection.topic == '/luminar_left_points':
