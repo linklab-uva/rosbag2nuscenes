@@ -2,6 +2,7 @@
 
 import sys
 import os
+from time import time
 from rosbags.rosbag2 import Reader
 import pcl
 import numpy as np
@@ -75,32 +76,40 @@ def write_scene(rosbag_file):
                 lidar_front = dict()
                 front_token = token_hex(16)
                 lidar_front['token'] = front_token
-                lidar_front['channel'] = 'LUMINAR_FRONT'
+                lidar_front['channel'] = 'LIDAR_FRONT'
                 lidar_front['modality'] = 'lidar'
                 # Left lidar topic
                 lidar_left = dict()
                 left_token = token_hex(16)
                 lidar_left['token'] = left_token
-                lidar_left['channel'] = 'LUMINAR_LEFT'
+                lidar_left['channel'] = 'LIDAR_LEFT'
                 lidar_left['modality'] = 'lidar'
                 # Right lidar topic
                 lidar_right = dict()
                 right_token = token_hex(16)
                 lidar_right['token'] = right_token
-                lidar_right['channel'] = 'LUMINAR_RIGHT'
+                lidar_right['channel'] = 'LIDAR_RIGHT'
                 lidar_right['modality'] = 'lidar'
+                # Combined lidar topic
+                lidar_all = dict()
+                all_token = token_hex(16)
+                lidar_all['token'] = all_token
+                lidar_all['channel'] = 'LIDAR_COMBINED'
+                lidar_all['modality'] = 'lidar'
 
                 json.dump([lidar_front, lidar_left, lidar_right], outfile, indent=4)
         else:
             with open('sensor.json', 'r', encoding='utf-8') as readfile:
                 sensors = json.load(readfile)
                 for sensor in sensors:
-                    if sensor['channel'] == 'LUMINAR_FRONT':
+                    if sensor['channel'] == 'LIDAR_FRONT':
                         front_token = sensor['token']
-                    elif sensor['channel'] == 'LUMINAR_LEFT':
+                    elif sensor['channel'] == 'LIDAR_LEFT':
                         left_token = sensor['token']
-                    elif sensor['channel'] == 'LUMINAR_FRONT':
+                    elif sensor['channel'] == 'LIDAR_FRONT':
                         right_token = sensor['token']
+                    elif sensor['channel'] == 'LIDAR_COMBINED':
+                        all_token = sensor['token']
         # Create calibrated_sensor.json
         with open('calibrated_sensor.json', 'a', encoding='utf-8') as outfile:
             frames_received = []
@@ -117,6 +126,15 @@ def write_scene(rosbag_file):
                         data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
                         data['camera_instrinsic'] = []
                         frames_received.append('luminar_front')
+                        # Repeat for combined topic
+                        data = dict()
+                        all_calibrated_sensor_token = token_hex(16)
+                        data['token'] = all_calibrated_sensor_token
+                        data['sensor_token'] = all_token
+                        data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
+                        data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
+                        data['camera_instrinsic'] = []
+                        frames_received.append('luminar_all')
                     elif transform.child_frame_id == 'luminar_left' and 'luminar_left' not in frames_received:
                         data = dict()
                         left_calibrated_sensor_token = token_hex(16)
@@ -138,11 +156,10 @@ def write_scene(rosbag_file):
                     else:
                         continue
                     new_json.append(data)
-                if len(frames_received) == 3:
+                if len(frames_received) == 4:
                     break
             json.dump(new_json, outfile, indent=4)
         # Create remaining json files
-        connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom' or x.topic == '/luminar_points')]
         first_scene, last_scene = '', ''
         prev_scene, next_scene = '', token_hex(16)
         prev_sample, next_sample = '', token_hex(16)
@@ -169,9 +186,18 @@ def write_scene(rosbag_file):
             ego_pose['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
             ego_pose['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
             ego_poses.append(ego_pose)
-        connections = [x for x in reader.connections.values() if (x.topic == '/luminar_front_points' or x.topic == '/luminar_left_points' or x.topic == '/luminar_right_points')]
+        connections = [x for x in reader.connections.values() if (x.topic == '/luminar_points' or x.topic == '/luminar_front_points' or x.topic == '/luminar_left_points' or x.topic == '/luminar_right_points')]
         print("Serializing lidar data")
+        previous_sampled_timestamp = None
+        nbr_samples = 0
         for connection, timestamp, rawdata in tqdm(reader.messages(connections=connections)):
+            is_key_frame = False
+            if previous_sampled_timestamp is None:
+                previous_sampled_timestamp = timestamp
+            elif (datetime.fromtimestamp(timestamp) - datetime.fromtimestamp(previous_sampled_timestamp)).total_seconds() > 0.5:
+                previous_sampled_timestamp = timestamp
+                is_key_frame = True
+                nbr_samples += 1
             # Create sample.json
             sample = dict()
             sample_token = next_scene
@@ -210,13 +236,18 @@ def write_scene(rosbag_file):
                     ego_pose_token = ego_pose_queue[i-1]
                     break
             data['ego_pose_token'] = ego_pose_token[0]
-            if connection.topic == '/luminar_front_points':
+            if connection.topic == '/luminar_points':
+                data['calibrated_sensor_token'] = all_calibrated_sensor_token
+                sensor_name = 'LIDAR_COMBINED'
+            elif connection.topic == '/luminar_front_points':
                 data['calibrated_sensor_token'] = front_calibrated_sensor_token
+                sensor_name = 'LIDAR_FRONT'
             elif connection.topic == '/luminar_left_points':
                 data['calibrated_sensor_token'] = left_calibrated_sensor_token
+                sensor_name = 'LIDAR_LEFT'
             else:
                 data['calibrated_sensor_token'] = right_calibrated_sensor_token
-       
+                sensor_name = 'LIDAR_RIGHT'
             points_list = []
 
             for point in pc2.read_points(msg, skip_nans=True):
@@ -225,11 +256,14 @@ def write_scene(rosbag_file):
             pcl_data = pcl.PointCloud_PointXYZRGB()
             pcl_data.from_list(points_list)
 
-            filename = "samples/{0}.pcd".format(data_token)
+            if is_key_frame:
+                filename = "samples/{0}/{1}__{1}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], data_token, timestamp)
+            else:
+                filename = "sweeps/{0}/{1}__{1}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], data_token, timestamp)
             pcl.save(pcl_data, filename)
             data['filename'] = filename
             data['fileformat'] = 'pcd'
-            data['is_key_frame'] = 'TODO'
+            data['is_key_frame'] = is_key_frame
             data['height'] = 0
             data['width'] = 0
             data['timestamp'] = timestamp
@@ -254,8 +288,7 @@ def write_scene(rosbag_file):
             data = dict()
             data['token'] = scene_token
             data['log_token'] = log_token
-            connection = [x for x in reader.connections.values() if x.topic == '/novatel_top/dyntf_odom'][0]
-            data['nbr_samples'] = connection.count
+            data['nbr_samples'] = nbr_samples
             first_scene, last_scene = token_hex(16), token_hex(16)
             data['first_sample_token'] = first_scene
             data['last_sample_token'] = last_scene
