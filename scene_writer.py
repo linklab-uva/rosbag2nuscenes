@@ -2,7 +2,6 @@
 
 import sys
 import os
-from time import time
 from rosbags.rosbag2 import Reader
 import pcl
 import numpy as np
@@ -97,7 +96,7 @@ def write_scene(rosbag_file):
                 lidar_all['channel'] = 'LIDAR_COMBINED'
                 lidar_all['modality'] = 'lidar'
 
-                json.dump([lidar_front, lidar_left, lidar_right], outfile, indent=4)
+                json.dump([lidar_front, lidar_left, lidar_right, lidar_all], outfile, indent=4)
         else:
             with open('sensor.json', 'r', encoding='utf-8') as readfile:
                 sensors = json.load(readfile)
@@ -126,15 +125,7 @@ def write_scene(rosbag_file):
                         data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
                         data['camera_instrinsic'] = []
                         frames_received.append('luminar_front')
-                        # Repeat for combined topic
-                        data = dict()
-                        all_calibrated_sensor_token = token_hex(16)
-                        data['token'] = all_calibrated_sensor_token
-                        data['sensor_token'] = all_token
-                        data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
-                        data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
-                        data['camera_instrinsic'] = []
-                        frames_received.append('luminar_all')
+                        
                     elif transform.child_frame_id == 'luminar_left' and 'luminar_left' not in frames_received:
                         data = dict()
                         left_calibrated_sensor_token = token_hex(16)
@@ -153,6 +144,15 @@ def write_scene(rosbag_file):
                         data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
                         data['camera_instrinsic'] = []
                         frames_received.append('luminar_right')
+                    elif 'luminar_all' not in frames_received:
+                        data = dict()
+                        all_calibrated_sensor_token = token_hex(16)
+                        data['token'] = all_calibrated_sensor_token
+                        data['sensor_token'] = all_token
+                        data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
+                        data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
+                        data['camera_instrinsic'] = []
+                        frames_received.append('luminar_all')
                     else:
                         continue
                     new_json.append(data)
@@ -160,9 +160,8 @@ def write_scene(rosbag_file):
                     break
             json.dump(new_json, outfile, indent=4)
         # Create remaining json files
-        first_scene, last_scene = '', ''
-        prev_scene, next_scene = '', token_hex(16)
-        prev_sample, next_sample = '', token_hex(16)
+        first_scene = ''
+        prev_sample_token, next_sample_token = '', token_hex(16)
         scene_token = token_hex(16)
         samples = []
         sample_data = []
@@ -172,7 +171,9 @@ def write_scene(rosbag_file):
         egopose_json = open('ego_pose.json', 'a', encoding='utf-8')
         if not os.path.exists('samples'):
             os.makedirs('samples')
-        connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom')]
+        if not os.path.exists('sweeps'):
+            os.makedirs('sweeps')
+        connections = [x for x in reader.connections.values() if (x.topic == '/novatel_top/dyntf_odom' or x.topic == '/dyntf_odom')]
         ego_pose_queue = []
         print("Serializing ego poses")
         for connection, timestamp, rawdata in tqdm(reader.messages(connections=connections)):
@@ -186,29 +187,29 @@ def write_scene(rosbag_file):
             ego_pose['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
             ego_pose['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
             ego_poses.append(ego_pose)
-        connections = [x for x in reader.connections.values() if (x.topic == '/luminar_points' or x.topic == '/luminar_front_points' or x.topic == '/luminar_left_points' or x.topic == '/luminar_right_points')]
         print("Serializing lidar data")
         previous_sampled_timestamp = None
         nbr_samples = 0
+        connections = [x for x in reader.connections.values() if (x.topic == '/luminar_points' or x.topic == '/luminar_front_points' or x.topic == '/luminar_left_points' or x.topic == '/luminar_right_points')]
+        previous_front_token, previous_left_token, previous_right_token, previous_all_token = '', '', '', ''
+        next_front_token, next_left_token, next_right_token, next_all_token = token_hex(16), token_hex(16), token_hex(16), token_hex(16)
+        sensors_added = set()
         for connection, timestamp, rawdata in tqdm(reader.messages(connections=connections)):
-            is_key_frame = False
-            if previous_sampled_timestamp is None:
+            if previous_sampled_timestamp is None or (datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(previous_sampled_timestamp * 1e-9)).total_seconds() > 0.5:
                 previous_sampled_timestamp = timestamp
-            elif (datetime.fromtimestamp(timestamp) - datetime.fromtimestamp(previous_sampled_timestamp)).total_seconds() > 0.5:
-                previous_sampled_timestamp = timestamp
-                is_key_frame = True
                 nbr_samples += 1
-            # Create sample.json
-            sample = dict()
-            sample_token = next_scene
-            sample['token'] = sample_token
-            sample['timestamp'] = timestamp
-            sample['scene_token'] = scene_token
-            sample['prev'] = prev_scene
-            prev_scene = next_scene
-            next_scene = token_hex(16)
-            sample['next'] = next_scene  
-            samples.append(sample)
+                # Create sample.json
+                sample = dict()
+                sample_token = next_sample_token
+                sample['token'] = sample_token
+                sample['timestamp'] = timestamp
+                sample['scene_token'] = scene_token
+                sample['prev'] = prev_sample_token
+                prev_sample_token = next_sample_token
+                next_sample_token = token_hex(16)
+                sample['next'] = next_sample_token
+                samples.append(sample)
+                sensors_added.clear()
 
             # Create sample_data.json
             ros2_msg  = deserialize_cdr(rawdata, connection.msgtype)
@@ -223,10 +224,42 @@ def write_scene(rosbag_file):
             msg.row_step = ros2_msg.row_step
             msg.width = ros2_msg.width
             data = dict()
-            data_token = token_hex(16)
+            if connection.topic == '/luminar_points':
+                sensor_token = all_calibrated_sensor_token
+                sensor_name = 'LIDAR_COMBINED'
+                prev_data_token = previous_all_token
+                data_token = next_all_token
+                next_all_token = token_hex(16)
+                previous_all_token = data_token
+                next_data_token = next_all_token
+            elif connection.topic == '/luminar_front_points':
+                sensor_token = front_calibrated_sensor_token
+                sensor_name = 'LIDAR_FRONT'
+                prev_data_token = previous_front_token
+                data_token = next_front_token
+                next_front_token = token_hex(16)
+                previous_front_token = data_token
+                next_data_token = next_front_token
+            elif connection.topic == '/luminar_left_points':
+                sensor_token = left_calibrated_sensor_token
+                sensor_name = 'LIDAR_LEFT'
+                prev_data_token = previous_left_token
+                data_token = next_left_token
+                next_left_token = token_hex(16)
+                previous_left_token = data_token
+                next_data_token = next_left_token
+            else:
+                sensor_token = right_calibrated_sensor_token
+                sensor_name = 'LIDAR_RIGHT'
+                prev_data_token = previous_right_token
+                data_token = next_right_token
+                next_right_token = token_hex(16)
+                previous_right_token = data_token
+                next_data_token = next_right_token
             data['token'] = data_token
-            data['sample_token'] = prev_scene
-            # Find closest ego pose
+            data['sample_token'] = sample_token
+            data['calibrated_sensor_token'] = sensor_token
+            # Find closest ego pose (TODO: optimize)
             previous_time_difference = np.inf
             for i in range(len(ego_pose_queue)):
                 time_difference = abs((datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(ego_pose_queue[i][1] * 1e-9)).total_seconds())
@@ -236,30 +269,26 @@ def write_scene(rosbag_file):
                     ego_pose_token = ego_pose_queue[i-1]
                     break
             data['ego_pose_token'] = ego_pose_token[0]
-            if connection.topic == '/luminar_points':
-                data['calibrated_sensor_token'] = all_calibrated_sensor_token
-                sensor_name = 'LIDAR_COMBINED'
-            elif connection.topic == '/luminar_front_points':
-                data['calibrated_sensor_token'] = front_calibrated_sensor_token
-                sensor_name = 'LIDAR_FRONT'
-            elif connection.topic == '/luminar_left_points':
-                data['calibrated_sensor_token'] = left_calibrated_sensor_token
-                sensor_name = 'LIDAR_LEFT'
-            else:
-                data['calibrated_sensor_token'] = right_calibrated_sensor_token
-                sensor_name = 'LIDAR_RIGHT'
             points_list = []
-
             for point in pc2.read_points(msg, skip_nans=True):
                 points_list.append([point[0], point[1], point[2], point[3]])
 
             pcl_data = pcl.PointCloud_PointXYZRGB()
             pcl_data.from_list(points_list)
 
-            if is_key_frame:
-                filename = "samples/{0}/{1}__{1}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], data_token, timestamp)
+            if sensor_name not in sensors_added:
+                if not os.path.exists('samples/{0}'.format(sensor_name)):
+                    os.makedirs('samples/{0}'.format(sensor_name))
+                filename = "samples/{0}/{1}__{0}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                sensors_added.add(sensor_name)
+                is_key_frame = True
+                if first_scene == '':
+                    first_scene = sample_token
             else:
-                filename = "sweeps/{0}/{1}__{1}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], data_token, timestamp)
+                if not os.path.exists('sweeps/{0}'.format(sensor_name)):
+                    os.makedirs('sweeps/{0}'.format(sensor_name))
+                filename = "sweeps/{0}/{1}__{0}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                is_key_frame = False
             pcl.save(pcl_data, filename)
             data['filename'] = filename
             data['fileformat'] = 'pcd'
@@ -267,10 +296,8 @@ def write_scene(rosbag_file):
             data['height'] = 0
             data['width'] = 0
             data['timestamp'] = timestamp
-            data['prev'] = prev_sample
-            prev_sample = next_sample
-            next_sample = token_hex(16)
-            data['next'] = next_sample
+            data['prev'] = prev_data_token
+            data['next'] = next_data_token
             sample_data.append(data)
 
         samples[-1]['next'] = ''
@@ -278,7 +305,6 @@ def write_scene(rosbag_file):
         json.dump(samples, sample_json, indent=4)
         json.dump(ego_poses, egopose_json, indent=4)
         json.dump(sample_data, sampledata_json, indent=4)
-        last_scene = prev_scene
         sample_json.close()
         egopose_json.close()
         sampledata_json.close()
@@ -289,9 +315,8 @@ def write_scene(rosbag_file):
             data['token'] = scene_token
             data['log_token'] = log_token
             data['nbr_samples'] = nbr_samples
-            first_scene, last_scene = token_hex(16), token_hex(16)
             data['first_sample_token'] = first_scene
-            data['last_sample_token'] = last_scene
+            data['last_sample_token'] = sample_token
             if rosbag_file[-1] == '/':
                 rosbag_file = rosbag_file[:-1]
             data['name'] = rosbag_file.split('/')[-1]
@@ -300,7 +325,7 @@ def write_scene(rosbag_file):
 
 if __name__=="__main__":
     if len(sys.argv) != 2:
-        print("Expecting: [rosbag path]")
+        print("Expecting: ./scene_writer.py [rosbag path]")
         print("Got: ", end='')
         for arg in sys.argv:
             print(arg, end='')
