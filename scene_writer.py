@@ -214,7 +214,7 @@ def write_scene(rosbag_file):
             # Create sample_data.json
             ros2_msg  = deserialize_cdr(rawdata, connection.msgtype)
             msg = PointCloud2()
-            msg.data =ros2_msg.data
+            msg.data = ros2_msg.data
             msg.fields = ros2_msg.fields
             msg.header = ros2_msg.header
             msg.height = ros2_msg.height
@@ -273,13 +273,10 @@ def write_scene(rosbag_file):
             for point in pc2.read_points(msg, skip_nans=True):
                 points_list.append([point[0], point[1], point[2], point[3]])
 
-            pcl_data = pcl.PointCloud_PointXYZRGB()
-            pcl_data.from_list(points_list)
-
             if sensor_name not in sensors_added:
                 if not os.path.exists('samples/{0}'.format(sensor_name)):
                     os.makedirs('samples/{0}'.format(sensor_name))
-                filename = "samples/{0}/{1}__{0}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                filename = "samples/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                 sensors_added.add(sensor_name)
                 is_key_frame = True
                 if first_scene == '':
@@ -287,9 +284,11 @@ def write_scene(rosbag_file):
             else:
                 if not os.path.exists('sweeps/{0}'.format(sensor_name)):
                     os.makedirs('sweeps/{0}'.format(sensor_name))
-                filename = "sweeps/{0}/{1}__{0}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                filename = "sweeps/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                 is_key_frame = False
-            pcl.save(pcl_data, filename)
+            with open(filename, 'wb') as pcd_file:
+                for point in points_list:
+                    pcd_file.write(b'{0} {1} {2} {3}'.format(point[0], point[1], point[2], point[3]))
             data['filename'] = filename
             data['fileformat'] = 'pcd'
             data['is_key_frame'] = is_key_frame
