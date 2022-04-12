@@ -3,11 +3,10 @@
 import sys
 import os
 from rosbags.rosbag2 import Reader
-import pcl
 import numpy as np
-import sensor_msgs.point_cloud2 as pc2
-from sensor_msgs.msg import PointCloud2
 from rosbags.serde import deserialize_cdr
+from sensor_msgs.msg import PointCloud2
+import sensor_msgs.point_cloud2 as pc2
 from secrets import token_hex
 import json
 from datetime import datetime
@@ -77,24 +76,32 @@ def write_scene(rosbag_file):
                 lidar_front['token'] = front_token
                 lidar_front['channel'] = 'LIDAR_FRONT'
                 lidar_front['modality'] = 'lidar'
+                os.makedirs('samples/LIDAR_FRONT')
+                os.makedirs('sweeps/LIDAR_FRONT')
                 # Left lidar topic
                 lidar_left = dict()
                 left_token = token_hex(16)
                 lidar_left['token'] = left_token
                 lidar_left['channel'] = 'LIDAR_LEFT'
                 lidar_left['modality'] = 'lidar'
+                os.makedirs('samples/LIDAR_LEFT')
+                os.makedirs('sweeps/LIDAR_LEFT')
                 # Right lidar topic
                 lidar_right = dict()
                 right_token = token_hex(16)
                 lidar_right['token'] = right_token
                 lidar_right['channel'] = 'LIDAR_RIGHT'
                 lidar_right['modality'] = 'lidar'
+                os.makedirs('samples/LIDAR_RIGHT')
+                os.makedirs('sweeps/LIDAR_RIGHT')
                 # Combined lidar topic
                 lidar_all = dict()
                 all_token = token_hex(16)
                 lidar_all['token'] = all_token
                 lidar_all['channel'] = 'LIDAR_COMBINED'
                 lidar_all['modality'] = 'lidar'
+                os.makedirs('samples/LIDAR_COMBINED')
+                os.makedirs('sweeps/LIDAR_COMBINED')
 
                 json.dump([lidar_front, lidar_left, lidar_right, lidar_all], outfile, indent=4)
         else:
@@ -183,7 +190,7 @@ def write_scene(rosbag_file):
             ego_pose_token = token_hex(16)
             ego_pose_queue.append((ego_pose_token, timestamp))
             ego_pose['token'] = ego_pose_token
-            ego_pose['timestamp'] = timestamp
+            ego_pose['timestamp'] = timestamp * 1e-9
             ego_pose['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
             ego_pose['translation'] = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
             ego_poses.append(ego_pose)
@@ -202,7 +209,7 @@ def write_scene(rosbag_file):
                 sample = dict()
                 sample_token = next_sample_token
                 sample['token'] = sample_token
-                sample['timestamp'] = timestamp
+                sample['timestamp'] = timestamp * 1e-9
                 sample['scene_token'] = scene_token
                 sample['prev'] = prev_sample_token
                 prev_sample_token = next_sample_token
@@ -212,17 +219,18 @@ def write_scene(rosbag_file):
                 sensors_added.clear()
 
             # Create sample_data.json
-            ros2_msg  = deserialize_cdr(rawdata, connection.msgtype)
+            # # Convert rosbags msg to ros2 msg
+            rosbag_msg  = deserialize_cdr(rawdata, connection.msgtype)
             msg = PointCloud2()
-            msg.data = ros2_msg.data
-            msg.fields = ros2_msg.fields
-            msg.header = ros2_msg.header
-            msg.height = ros2_msg.height
-            msg.is_bigendian = ros2_msg.is_bigendian
-            msg.is_dense = ros2_msg.is_dense
-            msg.point_step = ros2_msg.point_step
-            msg.row_step = ros2_msg.row_step
-            msg.width = ros2_msg.width
+            msg.data = rosbag_msg.data
+            msg.fields = rosbag_msg.fields
+            msg.header = rosbag_msg.header
+            msg.height = rosbag_msg.height
+            msg.is_bigendian = rosbag_msg.is_bigendian
+            msg.is_dense = rosbag_msg.is_dense
+            msg.point_step = rosbag_msg.point_step
+            msg.row_step = rosbag_msg.row_step
+            msg.width = rosbag_msg.width
             data = dict()
             if connection.topic == '/luminar_points':
                 sensor_token = all_calibrated_sensor_token
@@ -259,42 +267,39 @@ def write_scene(rosbag_file):
             data['token'] = data_token
             data['sample_token'] = sample_token
             data['calibrated_sensor_token'] = sensor_token
-            # Find closest ego pose (TODO: optimize)
+            # Find closest ego pose
             previous_time_difference = np.inf
-            for i in range(len(ego_pose_queue)):
+            previous_loc = 0
+            for i in range(previous_loc, len(ego_pose_queue)):
                 time_difference = abs((datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(ego_pose_queue[i][1] * 1e-9)).total_seconds())
                 if time_difference < previous_time_difference:
                     previous_time_difference = time_difference
                 else:
                     ego_pose_token = ego_pose_queue[i-1]
+                    previous_loc = i - 1
                     break
             data['ego_pose_token'] = ego_pose_token[0]
-            points_list = []
+            points_string = ''
             for point in pc2.read_points(msg, skip_nans=True):
-                points_list.append([point[0], point[1], point[2], point[3]])
+                points_string += '{0} {1} {2} {3}\n'.format(point[0], point[1], point[2], point[3])
 
             if sensor_name not in sensors_added:
-                if not os.path.exists('samples/{0}'.format(sensor_name)):
-                    os.makedirs('samples/{0}'.format(sensor_name))
                 filename = "samples/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                 sensors_added.add(sensor_name)
                 is_key_frame = True
                 if first_scene == '':
                     first_scene = sample_token
             else:
-                if not os.path.exists('sweeps/{0}'.format(sensor_name)):
-                    os.makedirs('sweeps/{0}'.format(sensor_name))
                 filename = "sweeps/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                 is_key_frame = False
             with open(filename, 'wb') as pcd_file:
-                for point in points_list:
-                    pcd_file.write(b'{0} {1} {2} {3}'.format(point[0], point[1], point[2], point[3]))
+                pcd_file.write(points_string.encode())
             data['filename'] = filename
             data['fileformat'] = 'pcd'
             data['is_key_frame'] = is_key_frame
             data['height'] = 0
             data['width'] = 0
-            data['timestamp'] = timestamp
+            data['timestamp'] = timestamp * 1e-9
             data['prev'] = prev_data_token
             data['next'] = next_data_token
             sample_data.append(data)
