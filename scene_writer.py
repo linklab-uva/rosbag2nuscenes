@@ -23,7 +23,7 @@ from rosidl_runtime_py.utilities import get_message
 allowable_tracks = {'LVMS', 'IMS'}
 lidar_topics = {'/luminar_left_points', '/luminar_right_points', '/luminar_front_points'}
 radar_topics = {}
-camera_topics = {}
+camera_topics = {'/camera/front_left/image/compressed', '/camera/front_left_center/image/compressed', '/camera/front_left_center/image/compressed', '/camera/front_left_center/image/compressed', '/camera/rear_right/image/compressed'}
 odom_topic = '/novatel_top/odom'
 
 def get_rosbag_options(path, serialization_format="cdr", storage_id="sqlite3"):
@@ -90,7 +90,7 @@ def write_scene(argdict):
         if rosbag_file[-1] == '/':
             rosbag_file = rosbag_file[:-1]
         data['logfile'] = rosbag_file.split('/')[-1]
-        data['vehicle'] = 'Cavalier'
+        data['vehicle'] = 'TODO'
         date_captured = datetime.fromtimestamp(metadata_dict["starting_time"]["nanoseconds_since_epoch"] * 1e-9).strftime('%Y-%m-%d')
         data['date_captured'] = date_captured
         data['location'] = track_name
@@ -128,7 +128,7 @@ def write_scene(argdict):
     # Create sensor.json
     if not os.path.exists('sensor.json'):
         with open('sensor.json', 'w', encoding='utf-8') as outfile:
-            # Front lidar topic
+            # Front lidar
             lidar_front = dict()
             front_token = token_hex(16)
             lidar_front['token'] = front_token
@@ -136,7 +136,7 @@ def write_scene(argdict):
             lidar_front['modality'] = 'lidar'
             os.makedirs('samples/LIDAR_FRONT')
             os.makedirs('sweeps/LIDAR_FRONT')
-            # Left lidar topic
+            # Left lidar
             lidar_left = dict()
             left_token = token_hex(16)
             lidar_left['token'] = left_token
@@ -144,7 +144,7 @@ def write_scene(argdict):
             lidar_left['modality'] = 'lidar'
             os.makedirs('samples/LIDAR_LEFT')
             os.makedirs('sweeps/LIDAR_LEFT')
-            # Right lidar topic
+            # Right lidar
             lidar_right = dict()
             right_token = token_hex(16)
             lidar_right['token'] = right_token
@@ -152,7 +152,7 @@ def write_scene(argdict):
             lidar_right['modality'] = 'lidar'
             os.makedirs('samples/LIDAR_RIGHT')
             os.makedirs('sweeps/LIDAR_RIGHT')
-            # Combined lidar topic
+            # Combined lidar
             lidar_all = dict()
             all_token = token_hex(16)
             lidar_all['token'] = all_token
@@ -261,7 +261,7 @@ def write_scene(argdict):
     for idx in tqdm(iterable=range(total_msgs)):
         if(reader.has_next()):
             (topic, data, timestamp) = reader.read_next()
-            if topic in lidar_topics:# or topic in radar_topics or topic in camera_topics:
+            if topic in lidar_topics:
                 msg_type = type_map[topic]
                 msg_type_full = get_message(msg_type)
                 msg = deserialize_message(data, msg_type_full)
@@ -282,7 +282,6 @@ def write_scene(argdict):
                     sensors_added.clear()
 
                 # Create sample_data.json
-                # # Convert rosbags msg to ros2 msg
                 data = dict()
                 if topic == '/luminar_points':
                     sensor_token = all_calibrated_sensor_token
@@ -331,10 +330,14 @@ def write_scene(argdict):
                         previous_loc = i - 1
                         break
                 data['ego_pose_token'] = ego_pose_token[0]
-                points_string = ''
+                saved_points = np.zeros((msg.width, 5))
+                point_num = 0
                 for point in read_points(msg, skip_nans=True):
-                    points_string += '{0} {1} {2} {3}\n'.format(point[0], point[1], point[2], point[3])
-
+                    saved_points[point_num,0]=point[0]
+                    saved_points[point_num,1]=point[1]
+                    saved_points[point_num,2]=point[2]
+                    saved_points[point_num,3]=point[3]
+                    point_num += 1
                 if sensor_name not in sensors_added:
                     filename = "samples/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                     sensors_added.add(sensor_name)
@@ -345,7 +348,7 @@ def write_scene(argdict):
                     filename = "sweeps/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                     is_key_frame = False
                 with open(filename, 'wb') as pcd_file:
-                    pcd_file.write(points_string.encode())
+                    saved_points.astype('float32').tofile(pcd_file)
                 data['filename'] = filename
                 data['fileformat'] = 'pcd'
                 data['is_key_frame'] = is_key_frame
@@ -354,7 +357,7 @@ def write_scene(argdict):
                 data['timestamp'] = timestamp * 1e-9
                 data['prev'] = prev_data_token
                 data['next'] = next_data_token
-                sample_data.append(data)
+                sample_data.append(data)         
 
     samples[-1]['next'] = ''
     sample_data[-1]['next'] = ''
