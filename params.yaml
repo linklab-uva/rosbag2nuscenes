@@ -16,24 +16,30 @@ SENSOR_INFO:
   LIDAR_ALL:
     TOPIC: /luminar_points
     FRAME: rear_axle_middle
-  # CAMERA_FRONT_LEFT:
-  #   TOPIC: /camera/front_left/image/compressed
-  #   FRAME: camera_front_left
-  # CAMERA_FRONT_LEFT_CENTER:
-  #   TOPIC: /camera/front_left_center/image/compressed
-  #   FRAME: camera_front_1
+  CAMERA_FRONT_LEFT:
+    TOPIC: /camera/front_left/image/compressed
+    FRAME: camera_front_left
+    CALIB: /camera/front_left/camera_info
+  CAMERA_FRONT_LEFT_CENTER:
+    TOPIC: /camera/front_left_center/image/compressed
+    FRAME: camera_front_1
+    CALIB: /camera/front_left_center/camera_info
   # CAMERA_FRONT_RIGHT_CENTER:
   #   TOPIC: /camera/front_right_center/compressed
   #   FRAME: camera_front_2
-  # CAMERA_FRONT_RIGHT:
-  #   TOPIC: /camera/front_right/image/compressed
-  #   FRAME: camera_front_right
-  # CAMERA_REAR_LEFT:
-  #   TOPIC: /camera/rear_left/image/compressed
-  #   FRAME: camera_rear_left
-  # CAMERA_REAR_RIGHT:
-  #   TOPIC: /camera/rear_right/image/compressed
-  #   FRAME: camera_rear_right
+  #   CALIB: /camera/front_right_center/camera_info
+  CAMERA_FRONT_RIGHT:
+    TOPIC: /camera/front_right/image/compressed
+    FRAME: camera_front_right
+    CALIB: /camera/front_right/camera_info
+  CAMERA_REAR_LEFT:
+    TOPIC: /camera/rear_left/image/compressed
+    FRAME: camera_rear_left
+    CALIB: /camera/rear_left/camera_info
+  CAMERA_REAR_RIGHT:
+    TOPIC: /camera/rear_right/image/compressed
+    FRAME: camera_rear_right
+    CALIB: /camera/rear_right/camera_info
   # RADAR_FRONT:
   #   TOPIC: /radar_front/detection
   #   FRAME: radar_front

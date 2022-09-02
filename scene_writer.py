@@ -61,16 +61,18 @@ def write_scene(argdict):
     lidar_topics = dict()
     radar_topics = dict()
     camera_topics = dict()
-    for sensor_frame in param_dict["SENSOR_INFO"]:
-        modality = sensor_frame.split('_')[0]
+    camera_calibs = dict()
+    for sensor_name in param_dict["SENSOR_INFO"]:
+        modality = sensor_name.split('_')[0]
         if modality == "LIDAR":
-            lidar_topics[param_dict["SENSOR_INFO"][sensor_frame]["TOPIC"]] = sensor_frame
+            lidar_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
         elif modality == "RADAR":
-            radar_topics[param_dict["SENSOR_INFO"][sensor_frame]["TOPIC"]] = sensor_frame
+            radar_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
         elif modality == "CAMERA":
-            camera_topics[param_dict["SENSOR_INFO"][sensor_frame]["TOPIC"]] = sensor_frame
+            camera_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
+            camera_calibs[param_dict["SENSOR_INFO"][sensor_name]["FRAME"]] = param_dict["SENSOR_INFO"][sensor_name]["CALIB"]
         else:
-            raise ValueError("Invalid sensor %s in %s. Ensure sensor is of type LIDAR, RADAR, or CAMERA and is named [SENSOR TYPE]_[SENSOR LOCATION]" % (key, param_file))
+            raise ValueError("Invalid sensor %s in %s. Ensure sensor is of type LIDAR, RADAR, or CAMERA and is named [SENSOR TYPE]_[SENSOR LOCATION]" % (sensor_name, param_file))
     # Extract metadata from bag directory
     if not os.path.isfile(metadatafile):
         raise ValueError("Metadata file %s does not exist. Are you sure %s is a valid rosbag?" % (metadatafile, bag_dir))
@@ -85,7 +87,7 @@ def write_scene(argdict):
     for idx in tqdm(iterable=range(total_msgs)):
         if(reader.has_next()):
             (topic, data, t) = reader.read_next()
-            if topic == param_dict["BAG_INFO"]["ODOM_TOPIC"] or topic == '/tf_static':
+            if topic == param_dict["BAG_INFO"]["ODOM_TOPIC"] or topic == '/tf_static' or topic in camera_calibs.values():
                 msg_type = type_map[topic]
                 msg_type_full = get_message(msg_type)
                 msg = deserialize_message(data, msg_type_full)
@@ -201,7 +203,10 @@ def write_scene(argdict):
                 calibrated_sensor_data['sensor_token'] = sensor_token_dict[transform.child_frame_id]
                 calibrated_sensor_data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
                 calibrated_sensor_data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
-                calibrated_sensor_data['camera_intrinsic'] = [] # TODO
+                if transform.child_frame_id in camera_calibs:
+                    calibrated_sensor_data['camera_intrinsic'] = np.reshape(msg_dict[camera_calibs[transform.child_frame_id]][0][1].k, (3,3)).tolist()
+                else:
+                    calibrated_sensor_data['camera_intrinsic'] = []
                 # Store calibrated sensor token for use in creating sensor_data.json
                 sensor_token_dict[transform.child_frame_id] = calibrated_sensor_token
                 # Mark frame as processed
