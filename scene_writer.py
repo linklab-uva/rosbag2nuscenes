@@ -20,6 +20,8 @@ import itertools
 import yaml
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
+import cv2
+from cv_bridge import CvBridge
 
 def get_rosbag_options(path, serialization_format="cdr", storage_id="sqlite3"):
     storage_options = rosbag2_py.StorageOptions(uri=path, storage_id=storage_id)
@@ -218,7 +220,7 @@ def write_scene(argdict):
         json.dump(calibrated_sensors, f, indent=4)
     
     # Create remaining json files
-    first_scene = ''
+    first_sample = ''
     prev_sample_token, next_sample_token = '', token_hex(16)
     scene_token = token_hex(16)
     if os.path.exists('sample.json'):
@@ -254,6 +256,7 @@ def write_scene(argdict):
     previous_sampled_timestamp = None
     nbr_samples = 0
     data_token_dict = dict()
+    img_converter = CvBridge()
     for topic in list(lidar_topics.keys()) + list(radar_topics.keys()) + list(camera_topics.keys()):
         data_token_dict[topic] = ['', token_hex(16)]
     sensors_added = set()
@@ -261,79 +264,95 @@ def write_scene(argdict):
     for idx in tqdm(iterable=range(total_msgs)):
         if(reader.has_next()):
             (topic, data, timestamp) = reader.read_next()
-            if topic in lidar_topics:
-                msg_type = type_map[topic]
-                msg_type_full = get_message(msg_type)
-                msg = deserialize_message(data, msg_type_full)
-                if previous_sampled_timestamp is None or (datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(previous_sampled_timestamp * 1e-9)).total_seconds() > 0.5:
-                    previous_sampled_timestamp = timestamp
-                    nbr_samples += 1
-                    # Create sample.json
-                    sample = dict()
-                    sample_token = next_sample_token
-                    sample['token'] = sample_token
-                    sample['timestamp'] = timestamp
-                    sample['scene_token'] = scene_token
-                    sample['prev'] = prev_sample_token
-                    prev_sample_token = next_sample_token
-                    next_sample_token = token_hex(16)
-                    sample['next'] = next_sample_token
-                    samples.append(sample)
-                    sensors_added.clear()
+            if not (topic in lidar_topics or topic in radar_topics or topic in camera_topics):
+                continue
+            msg_type = type_map[topic]
+            msg_type_full = get_message(msg_type)
+            msg = deserialize_message(data, msg_type_full)
+            if previous_sampled_timestamp is None or (datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(previous_sampled_timestamp * 1e-9)).total_seconds() > 0.5:
+                previous_sampled_timestamp = timestamp
+                nbr_samples += 1
+                # Create sample.json
+                sample = dict()
+                sample_token = next_sample_token
+                sample['token'] = sample_token
+                sample['timestamp'] = timestamp
+                sample['scene_token'] = scene_token
+                sample['prev'] = prev_sample_token
+                prev_sample_token = next_sample_token
+                next_sample_token = token_hex(16)
+                sample['next'] = next_sample_token
+                samples.append(sample)
+                sensors_added.clear()
 
-                # Create sample_data.json
-                sensor_token = sensor_token_dict[msg.header.frame_id]
+            # Create sample_data.json
+            sensor_token = sensor_token_dict[msg.header.frame_id]
+            prev_data_token = data_token_dict[topic][0]
+            data_token = data_token_dict[topic][1]
+            data_token_dict[topic][1] = token_hex(16)
+            data_token_dict[topic][0] = data_token
+            sensor_data = dict()
+            sensor_data['token'] = data_token
+            sensor_data['sample_token'] = sample_token
+            sensor_data['calibrated_sensor_token'] = sensor_token
+            # Find closest ego pose
+            previous_time_difference = np.inf
+            previous_loc = 0
+            for i in range(previous_loc, len(ego_pose_queue)):
+                time_difference = abs((datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(ego_pose_queue[i][1] * 1e-9)).total_seconds())
+                if time_difference < previous_time_difference:
+                    previous_time_difference = time_difference
+                else:
+                    ego_pose_token = ego_pose_queue[i-1]
+                    previous_loc = i - 1
+                    break
+            sensor_data['ego_pose_token'] = ego_pose_token[0]
+            # Save data
+            if topic in lidar_topics:
                 sensor_name = lidar_topics[topic]
-                prev_data_token = data_token_dict[topic][0]
-                data_token = data_token_dict[topic][1]
-                data_token_dict[topic][1] = token_hex(16)
-                data_token_dict[topic][0] = data_token
-                sensor_data = dict()
-                sensor_data['token'] = data_token
-                sensor_data['sample_token'] = sample_token
-                sensor_data['calibrated_sensor_token'] = sensor_token
-                # Find closest ego pose
-                previous_time_difference = np.inf
-                previous_loc = 0
-                for i in range(previous_loc, len(ego_pose_queue)):
-                    time_difference = abs((datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(ego_pose_queue[i][1] * 1e-9)).total_seconds())
-                    if time_difference < previous_time_difference:
-                        previous_time_difference = time_difference
-                    else:
-                        ego_pose_token = ego_pose_queue[i-1]
-                        previous_loc = i - 1
-                        break
-                sensor_data['ego_pose_token'] = ego_pose_token[0]
-                # Save data
-                if topic in lidar_topics:
-                    saved_points = np.zeros((msg.width, 5))
-                    point_num = 0
-                    for point in read_points(msg, skip_nans=True):
-                        saved_points[point_num,0]=point[0]
-                        saved_points[point_num,1]=point[1]
-                        saved_points[point_num,2]=point[2]
-                        saved_points[point_num,3]=point[3]
-                        point_num += 1
-                    if sensor_name not in sensors_added:
-                        filename = "samples/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
-                        sensors_added.add(sensor_name)
-                        is_key_frame = True
-                        if first_scene == '':
-                            first_scene = sample_token
-                    else:
-                        filename = "sweeps/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
-                        is_key_frame = False
-                    with open(filename, 'wb') as pcd_file:
-                        saved_points.astype('float32').tofile(pcd_file)
-                sensor_data['filename'] = filename
-                sensor_data['fileformat'] = 'pcd'
-                sensor_data['is_key_frame'] = is_key_frame
-                sensor_data['height'] = 0
-                sensor_data['width'] = 0
-                sensor_data['timestamp'] = timestamp
-                sensor_data['prev'] = prev_data_token
-                sensor_data['next'] = data_token_dict[topic][1]
-                sample_data.append(sensor_data)         
+                saved_points = np.zeros((msg.width, 5))
+                point_num = 0
+                for point in read_points(msg, skip_nans=True):
+                    saved_points[point_num,0]=point[0]
+                    saved_points[point_num,1]=point[1]
+                    saved_points[point_num,2]=point[2]
+                    saved_points[point_num,3]=point[3]
+                    point_num += 1
+                if sensor_name not in sensors_added:
+                    filename = "samples/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                    sensors_added.add(sensor_name)
+                    is_key_frame = True
+                    if first_sample == '':
+                        first_sample = sample_token
+                else:
+                    filename = "sweeps/{0}/{1}__{0}__{2}.pcd.bin".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                    is_key_frame = False
+                with open(filename, 'wb') as pcd_file:
+                    saved_points.astype('float32').tofile(pcd_file)
+            elif topic in camera_topics:
+                sensor_name = camera_topics[topic]
+                img = cv2.cvtColor(img_converter.compressed_imgmsg_to_cv2(msg), cv2.COLOR_BGR2RGB)
+                if sensor_name not in sensors_added:
+                    filename = "samples/{0}/{1}__{0}__{2}.jpg".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                    sensors_added.add(sensor_name)
+                    is_key_frame = True
+                    if first_sample == '':
+                        first_sample = sample_token
+                else:
+                    filename = "sweeps/{0}/{1}__{0}__{2}.jpg".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                    is_key_frame = False
+                cv2.imwrite(filename, img)
+            
+
+            sensor_data['filename'] = filename
+            sensor_data['fileformat'] = 'pcd'
+            sensor_data['is_key_frame'] = is_key_frame
+            sensor_data['height'] = 0
+            sensor_data['width'] = 0
+            sensor_data['timestamp'] = timestamp
+            sensor_data['prev'] = prev_data_token
+            sensor_data['next'] = data_token_dict[topic][1]
+            sample_data.append(sensor_data)         
 
     samples[-1]['next'] = ''
     sample_data[-1]['next'] = ''
@@ -355,7 +374,7 @@ def write_scene(argdict):
         scene['token'] = scene_token
         scene['log_token'] = log_token
         scene['nbr_samples'] = nbr_samples
-        scene['first_sample_token'] = first_scene
+        scene['first_sample_token'] = first_sample
         scene['last_sample_token'] = sample_token
         if rosbag_file[-1] == '/':
             rosbag_file = rosbag_file[:-1]
