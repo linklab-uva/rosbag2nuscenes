@@ -1,0 +1,48 @@
+BAG_INFO:
+  TEAM: MIT
+  DESCRIPTION: This is a bag file
+  ODOM_TOPIC: /novatel_top/odom
+  TRACK: IMS
+SENSOR_INFO:
+  LIDAR_FRONT:
+    TOPIC: /luminar_front_points
+    FRAME: luminar_front
+  LIDAR_LEFT:
+    TOPIC: /luminar_left_points
+    FRAME: luminar_left
+  LIDAR_RIGHT:
+    TOPIC: /luminar_right_points
+    FRAME: luminar_right
+  LIDAR_ALL:
+    TOPIC: /luminar_points
+    FRAME: rear_axle_middle
+  # CAMERA_FRONT_LEFT:
+  #   TOPIC: /camera/front_left/image/compressed
+  #   FRAME: camera_front_left
+  # CAMERA_FRONT_LEFT_CENTER:
+  #   TOPIC: /camera/front_left_center/image/compressed
+  #   FRAME: camera_front_1
+  # CAMERA_FRONT_RIGHT_CENTER:
+  #   TOPIC: /camera/front_right_center/compressed
+  #   FRAME: camera_front_2
+  # CAMERA_FRONT_RIGHT:
+  #   TOPIC: /camera/front_right/image/compressed
+  #   FRAME: camera_front_right
+  # CAMERA_REAR_LEFT:
+  #   TOPIC: /camera/rear_left/image/compressed
+  #   FRAME: camera_rear_left
+  # CAMERA_REAR_RIGHT:
+  #   TOPIC: /camera/rear_right/image/compressed
+  #   FRAME: camera_rear_right
+  # RADAR_FRONT:
+  #   TOPIC: /radar_front/detection
+  #   FRAME: radar_front
+  # RADAR_LEFT:
+  #   TOPIC: /radar_left/detection
+  #   FRAME: radar_port
+  # RADAR_RIGHT:
+  #   TOPIC: /radar_right/detection
+  #   FRAME: radar_starboard
+  # RADAR_REAR:
+  #   TOPIC: /radar_rear/detection
+  #   FRAME: radar_rear
