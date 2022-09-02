@@ -40,15 +40,15 @@ SENSOR_INFO:
     TOPIC: /camera/rear_right/image/compressed
     FRAME: camera_rear_right
     CALIB: /camera/rear_right/camera_info
-  # RADAR_FRONT:
-  #   TOPIC: /radar_front/detection
-  #   FRAME: radar_front
-  # RADAR_LEFT:
-  #   TOPIC: /radar_left/detection
-  #   FRAME: radar_port
-  # RADAR_RIGHT:
-  #   TOPIC: /radar_right/detection
-  #   FRAME: radar_starboard
-  # RADAR_REAR:
-  #   TOPIC: /radar_rear/detection
-  #   FRAME: radar_rear
+  RADAR_FRONT:
+    TOPIC: /radar_front/esr_track
+    FRAME: radar_front
+  RADAR_LEFT:
+    TOPIC: /radar_left/esr_track
+    FRAME: radar_port
+  RADAR_RIGHT:
+    TOPIC: /radar_right/esr_track
+    FRAME: radar_starboard
+  RADAR_REAR:
+    TOPIC: /radar_rear/esr_track
+    FRAME: radar_rear

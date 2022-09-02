@@ -10,7 +10,7 @@ import rosbag2_py
 from sensor_msgs_py.point_cloud2 import read_points
 import sensor_msgs
 import tf2_msgs
-import delphi_mrr_msgs
+import delphi_esr_msgs
 import nav_msgs
 from secrets import token_hex
 import json
@@ -22,6 +22,7 @@ from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 import cv2
 from cv_bridge import CvBridge
+import math
 
 def get_rosbag_options(path, serialization_format="cdr", storage_id="sqlite3"):
     storage_options = rosbag2_py.StorageOptions(uri=path, storage_id=storage_id)
@@ -45,7 +46,7 @@ def open_bagfile(filepath: str, serialization_format="cdr", storage_id="sqlite3"
     return topic_types, type_map, topic_metadata_map, reader
 
 def headerKey( tup ):
-    msg : Union[ tf2_msgs.msg.TFMessage, nav_msgs.msg.Odometry, sensor_msgs.msg.PointCloud, delphi_mrr_msgs.msg.Detection, sensor_msgs.msg.CompressedImage, sensor_msgs.msg.CameraInfo] = tup[1]
+    msg : Union[ tf2_msgs.msg.TFMessage, nav_msgs.msg.Odometry, sensor_msgs.msg.PointCloud, delphi_esr_msgs.msg.EsrTrack, sensor_msgs.msg.CompressedImage, sensor_msgs.msg.CameraInfo] = tup[1]
     return rclpy.time.Time.from_msg(msg.header.stamp)
 
 def write_scene(argdict):
@@ -342,8 +343,25 @@ def write_scene(argdict):
                     filename = "sweeps/{0}/{1}__{0}__{2}.jpg".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                     is_key_frame = False
                 cv2.imwrite(filename, img)
-            
-
+            elif topic in radar_topics:
+                sensor_name = radar_topics[topic]
+                x_pos = msg.track_range*math.cos(math.radians(msg.track_angle))
+                y_pos =  msg.track_range*math.sin(math.radians(msg.track_angle))
+                vx_comp = msg.track_range_rate*math.cos(math.radians(msg.track_angle))
+                vy_comp = msg.track_range_rate*math.sin(math.radians(msg.track_angle))
+                points = np.array([x_pos,y_pos, 0.0, msg.track_id, msg.track_width, vx_comp, vy_comp, 1/math.sqrt(2) * x_pos, 1/math.sqrt(2) * y_pos, 1/math.sqrt(2) * vx_comp, 1/math.sqrt(2) * vy_comp])
+                if sensor_name not in sensors_added:
+                    filename = "samples/{0}/{1}__{0}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                    sensors_added.add(sensor_name)
+                    is_key_frame = True
+                    if first_sample == '':
+                        first_sample = sample_token
+                else:
+                    filename = "sweeps/{0}/{1}__{0}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
+                    is_key_frame = False
+                with open(filename, 'wb') as pcd_file:
+                    pcd_file.write("# .PCD v0.7 - Point Cloud Data file format\nVERSION 0.7\nFIELDS x y z id rcs vx_comp vy_comp x_rms y_rms vx_rms vy_rms\nSIZE 4 4 4 1 4 4 4 4 4 4 4\nTYPE F F F I F F F F F F F\nCOUNT 1 1 1 1 1 1 1 1 1 1 1\nWIDTH 1\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS 1\nDATA binary\n".encode('utf-8'))
+                    points.tofile(pcd_file)
             sensor_data['filename'] = filename
             sensor_data['fileformat'] = 'pcd'
             sensor_data['is_key_frame'] = is_key_frame
