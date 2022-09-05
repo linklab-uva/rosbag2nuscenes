@@ -1,7 +1,7 @@
 BAG_INFO:
-  TEAM: MIT
-  DESCRIPTION: This is a bag file
-  ODOM_TOPIC: /novatel_top/odom
+  TEAM: MIT-PITT-RW
+  DESCRIPTION: Low speed multi-agent laps with KAIST
+  ODOM_TOPIC: /vehicle_8/local_odometry
   TRACK: IMS
 SENSOR_INFO:
   LIDAR_FRONT:
