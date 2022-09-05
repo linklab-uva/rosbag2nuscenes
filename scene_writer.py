@@ -68,12 +68,15 @@ def write_scene(argdict):
     for sensor_name in param_dict["SENSOR_INFO"]:
         modality = sensor_name.split('_')[0]
         if modality == "LIDAR":
-            lidar_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
+            if param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]:
+                lidar_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
         elif modality == "RADAR":
-            radar_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
+            if param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]:
+                radar_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
         elif modality == "CAMERA":
-            camera_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
-            camera_calibs[param_dict["SENSOR_INFO"][sensor_name]["FRAME"]] = param_dict["SENSOR_INFO"][sensor_name]["CALIB"]
+            if param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]:
+                camera_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
+                camera_calibs[param_dict["SENSOR_INFO"][sensor_name]["FRAME"]] = param_dict["SENSOR_INFO"][sensor_name]["CALIB"]
         else:
             raise ValueError("Invalid sensor %s in %s. Ensure sensor is of type LIDAR, RADAR, or CAMERA and is named [SENSOR TYPE]_[SENSOR LOCATION]" % (sensor_name, param_file))
     # Extract metadata from bag directory
@@ -215,8 +218,8 @@ def write_scene(argdict):
                 # Mark frame as processed
                 frames_received.append(transform.child_frame_id)
                 calibrated_sensors.append(calibrated_sensor_data)
-            if len(frames_received) == len(param_dict['SENSOR_INFO']):
-                break
+        if len(frames_received) == len(lidar_topics) + len(radar_topics) + len(camera_topics):
+            break
     with open('calibrated_sensor.json', 'w') as f:
         json.dump(calibrated_sensors, f, indent=4)
     
@@ -246,7 +249,7 @@ def write_scene(argdict):
         # Create ego_pose.json
         ego_pose = dict()
         ego_pose_token = token_hex(16)
-        ego_pose_queue.append((ego_pose_token, timestamp))
+        ego_pose_queue.append((ego_pose_token, timestamp, np.array([msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z])))
         ego_pose['token'] = ego_pose_token
         ego_pose['timestamp'] = timestamp * 1e-9
         ego_pose['rotation'] = [msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]
@@ -256,6 +259,7 @@ def write_scene(argdict):
     print("Extracting sensor data")
     previous_sampled_timestamp = None
     nbr_samples = 0
+    previous_loc = 0
     data_token_dict = dict()
     img_converter = CvBridge()
     for topic in list(lidar_topics.keys()) + list(radar_topics.keys()) + list(camera_topics.keys()):
@@ -277,7 +281,7 @@ def write_scene(argdict):
                 sample = dict()
                 sample_token = next_sample_token
                 sample['token'] = sample_token
-                sample['timestamp'] = timestamp
+                sample['timestamp'] = timestamp * 1e-9
                 sample['scene_token'] = scene_token
                 sample['prev'] = prev_sample_token
                 prev_sample_token = next_sample_token
@@ -298,19 +302,21 @@ def write_scene(argdict):
             sensor_data['calibrated_sensor_token'] = sensor_token
             # Find closest ego pose
             previous_time_difference = np.inf
-            previous_loc = 0
             for i in range(previous_loc, len(ego_pose_queue)):
                 time_difference = abs((datetime.fromtimestamp(timestamp * 1e-9) - datetime.fromtimestamp(ego_pose_queue[i][1] * 1e-9)).total_seconds())
                 if time_difference < previous_time_difference:
                     previous_time_difference = time_difference
                 else:
                     ego_pose_token = ego_pose_queue[i-1]
+                    ego_velocity = (ego_pose_queue[i][2] - ego_pose_queue[i-1][2]) / (datetime.fromtimestamp(ego_pose_queue[i][1] * 1e-9) - datetime.fromtimestamp(ego_pose_queue[i-1][1] * 1e-9)).total_seconds()
                     previous_loc = i - 1
                     break
             sensor_data['ego_pose_token'] = ego_pose_token[0]
             # Save data
             if topic in lidar_topics:
                 sensor_name = lidar_topics[topic]
+                height = 0
+                width = 0
                 saved_points = np.zeros((msg.width, 5))
                 point_num = 0
                 for point in read_points(msg, skip_nans=True):
@@ -333,6 +339,8 @@ def write_scene(argdict):
             elif topic in camera_topics:
                 sensor_name = camera_topics[topic]
                 img = cv2.cvtColor(img_converter.compressed_imgmsg_to_cv2(msg), cv2.COLOR_BGR2RGB)
+                height = img.shape[0]
+                width = img.shape[1]
                 if sensor_name not in sensors_added:
                     filename = "samples/{0}/{1}__{0}__{2}.jpg".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                     sensors_added.add(sensor_name)
@@ -345,11 +353,17 @@ def write_scene(argdict):
                 cv2.imwrite(filename, img)
             elif topic in radar_topics:
                 sensor_name = radar_topics[topic]
+                height = 0
+                width = 0
                 x_pos = msg.track_range*math.cos(math.radians(msg.track_angle))
                 y_pos =  msg.track_range*math.sin(math.radians(msg.track_angle))
-                vx_comp = msg.track_range_rate*math.cos(math.radians(msg.track_angle))
-                vy_comp = msg.track_range_rate*math.sin(math.radians(msg.track_angle))
-                points = np.array([x_pos,y_pos, 0.0, msg.track_id, msg.track_width, vx_comp, vy_comp, 1/math.sqrt(2) * x_pos, 1/math.sqrt(2) * y_pos, 1/math.sqrt(2) * vx_comp, 1/math.sqrt(2) * vy_comp])
+                vx_comp = msg.track_range_rate
+                vy_comp = msg.track_lat_rate
+                vx = vx_comp + ego_velocity[0]
+                vy = vy_comp + ego_velocity[1]
+                dyn_prop = not (vx < 1.0 and vy < 1.0)
+                ambig_state = 3 if dyn_prop else 4
+                points = np.array([x_pos,y_pos, 0.0, dyn_prop, msg.track_id, msg.track_width, vx, vy, vx_comp, vy_comp, 1, ambig_state, int(1/math.sqrt(2) * x_pos), int(1/math.sqrt(2) * y_pos), 0, 1, int(1/math.sqrt(2) * vx), int(1/math.sqrt(2) * vy)])
                 if sensor_name not in sensors_added:
                     filename = "samples/{0}/{1}__{0}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                     sensors_added.add(sensor_name)
@@ -360,20 +374,26 @@ def write_scene(argdict):
                     filename = "sweeps/{0}/{1}__{0}__{2}.pcd".format(sensor_name, rosbag_file.split('/')[-1], timestamp)
                     is_key_frame = False
                 with open(filename, 'wb') as pcd_file:
-                    pcd_file.write("# .PCD v0.7 - Point Cloud Data file format\nVERSION 0.7\nFIELDS x y z id rcs vx_comp vy_comp x_rms y_rms vx_rms vy_rms\nSIZE 4 4 4 1 4 4 4 4 4 4 4\nTYPE F F F I F F F F F F F\nCOUNT 1 1 1 1 1 1 1 1 1 1 1\nWIDTH 1\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS 1\nDATA binary\n".encode('utf-8'))
+                    pcd_file.write("# .PCD v0.7 - Point Cloud Data file format\nVERSION 0.7\nFIELDS x y z dyn_prop id rcs vx vy vx_comp vy_comp is_quality_valid ambig_state x_rms y_rms invalid_state pdh0 vx_rms vy_rms\nSIZE 4 4 4 1 2 4 4 4 4 4 1 1 1 1 1 1 1 1\nTYPE F F F I I F F F F F I I I I I I I I\nCOUNT 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1\nWIDTH 1\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS 1\nDATA binary\n".encode('utf-8'))
                     points.tofile(pcd_file)
             sensor_data['filename'] = filename
             sensor_data['fileformat'] = 'pcd'
             sensor_data['is_key_frame'] = is_key_frame
-            sensor_data['height'] = 0
-            sensor_data['width'] = 0
-            sensor_data['timestamp'] = timestamp
+            sensor_data['height'] = height
+            sensor_data['width'] = width
+            sensor_data['timestamp'] = timestamp * 1e-9
             sensor_data['prev'] = prev_data_token
             sensor_data['next'] = data_token_dict[topic][1]
             sample_data.append(sensor_data)         
 
     samples[-1]['next'] = ''
-    sample_data[-1]['next'] = ''
+    sensors_cleared = set()
+    for sensor_data in reversed(sample_data):
+        if sensor_data['calibrated_sensor_token'] not in sensors_cleared:
+            sensor_data['next'] = ''
+            sensors_cleared.add(sensor_data['calibrated_sensor_token'])
+        if len(sensors_cleared) == len(lidar_topics) + len(radar_topics) + len(camera_topics):
+            break
     with open('sample.json', 'w') as f:
         json.dump(samples, f, indent=4)
     with open('sample_data.json', 'w') as f:

@@ -14,7 +14,7 @@ SENSOR_INFO:
     TOPIC: /luminar_right_points
     FRAME: luminar_right
   LIDAR_ALL:
-    TOPIC: /luminar_points
+    TOPIC: 
     FRAME: rear_axle_middle
   CAMERA_FRONT_LEFT:
     TOPIC: /camera/front_left/image/compressed
@@ -26,7 +26,7 @@ SENSOR_INFO:
     CALIB: /camera/front_left_center/camera_info
   CAMERA_FRONT_RIGHT_CENTER:
     TOPIC:
-    FRAME:
+    FRAME: camera_front_2
     CALIB:
   CAMERA_FRONT_RIGHT:
     TOPIC: /camera/front_right/image/compressed
@@ -44,11 +44,11 @@ SENSOR_INFO:
     TOPIC: /radar_front/esr_track
     FRAME: radar_front
   RADAR_LEFT:
-    TOPIC: /radar_left/esr_track
+    TOPIC: 
     FRAME: radar_port
   RADAR_RIGHT:
-    TOPIC: /radar_right/esr_track
+    TOPIC: 
     FRAME: radar_starboard
   RADAR_REAR:
-    TOPIC: /radar_rear/esr_track
+    TOPIC: 
     FRAME: radar_rear
