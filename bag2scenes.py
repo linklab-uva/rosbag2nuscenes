@@ -10,7 +10,6 @@ import rosbag2_py
 from sensor_msgs_py.point_cloud2 import read_points
 import sensor_msgs
 import tf2_msgs
-import delphi_esr_msgs
 import nav_msgs
 from secrets import token_hex
 import json
@@ -99,6 +98,8 @@ def write_scene(argdict):
                 msg = deserialize_message(data, msg_type_full)
                 msg_dict[topic].append((t, msg))
 
+    if not os.path.isdir('v1.0-mini'):
+        os.mkdir('v1.0-mini')
     # Create log.json
     log_token = token_hex(16)
     if os.path.exists('v1.0-mini/log.json'):
@@ -191,7 +192,7 @@ def write_scene(argdict):
                     calibrated_sensor_data['camera_intrinsic'] = np.reshape(msg_dict[camera_calibs[transform.child_frame_id]][0][1].k, (3,3)).tolist()
                 else:
                     calibrated_sensor_data['camera_intrinsic'] = []
-                # Store calibrated sensor token for use in creating sensor_data.json
+                # Store calibrated sensor token for use in creating sample_data.json
                 sensor_token_dict[transform.child_frame_id] = calibrated_sensor_token
                 # Mark frame as processed
                 frames_received.append(transform.child_frame_id)
@@ -297,7 +298,7 @@ def write_scene(argdict):
                 width = 0
                 saved_points = np.zeros((msg.width, 5))
                 point_num = 0
-                for point in read_points(msg, skip_nans=True):
+                for point in read_points(msg, skip_nans=True, field_names=['x', 'y', 'z', 'intensity']):
                     saved_points[point_num,0]=point[0]
                     saved_points[point_num,1]=point[1]
                     saved_points[point_num,2]=point[2]
