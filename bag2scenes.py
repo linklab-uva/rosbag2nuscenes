@@ -22,6 +22,7 @@ from rosidl_runtime_py.utilities import get_message
 import cv2
 from cv_bridge import CvBridge
 import math
+from sensor_msgs.msg import PointCloud2
 
 def get_rosbag_options(path, serialization_format="cdr", storage_id="sqlite3"):
     storage_options = rosbag2_py.StorageOptions(uri=path, storage_id=storage_id)
@@ -298,6 +299,7 @@ def write_scene(argdict):
                 width = 0
                 saved_points = np.zeros((msg.width, 5))
                 point_num = 0
+                msg.fields.pop()
                 for point in read_points(msg, skip_nans=True, field_names=['x', 'y', 'z', 'intensity']):
                     saved_points[point_num,0]=point[0]
                     saved_points[point_num,1]=point[1]
@@ -399,6 +401,64 @@ def write_scene(argdict):
         scene['description'] = param_dict["BAG_INFO"]["DESCRIPTION"]
         scenes.append(scene)
         json.dump(scenes, f, indent=4)
+    
+    # Create dummy taxonomy json files
+    if not os.path.exists('v1.0-mini/category.json'):
+        category = dict()
+        category_token = token_hex(16)
+        category['token'] = category_token
+        category['name'] = ''
+        category['description'] = ''
+        with open('v1.0-mini/category.json', 'w') as f:
+            json.dump(category, f, indent=4)
+    if not os.path.exists('v1.0-mini/attribute.json'):
+        attribute = dict()
+        attribute_token = token_hex(16)
+        attribute['token'] = attribute_token
+        attribute['name'] = ''
+        attribute['description'] = ''
+        with open('v1.0-mini/attribute.json', 'w') as f:
+            json.dump(attribute, f, indent=4)
+    if not os.path.exists('v1.0-mini/visibility.json'):
+        visibility = dict()
+        visibility_token = '1'
+        visibility['description'] = ''
+        visibility['token'] = visibility_token
+        visibility['level'] = ''
+        with open('v1.0-mini/visibility.json', 'w') as f:
+            json.dump(visibility, f, indent=4)
+    
+    # Create dummy annotation json files
+    annotation_token = token_hex(16)
+    if not os.path.exists('v1.0-mini/instance.json'):
+        instance = dict()
+        instance_token = token_hex(16)
+        instance['token'] = instance_token
+        instance['category_token'] = category_token
+        instance['nbr_annotations'] = 0
+        instance['first_annotation_token'] = annotation_token
+        instance['last_annotation_token'] = annotation_token
+        with open('v1.0-mini/instance.json', 'w') as f:
+            json.dump(instance, f, indent=4)
+
+    if not os.path.exists('v1.0-mini/sample_annotation.json'):
+        annotation = dict()
+        annotation['token'] = annotation_token
+        annotation['sample_token'] = first_sample
+        annotation['instance_token'] = instance_token
+        annotation['visibility_token'] = visibility_token
+        annotation['attribute_tokens'] = [attribute_token]
+        annotation['translation'] = [0.0, 0.0, 0.0]
+        annotation['size'] = [0.0, 0.0, 0.0]
+        annotation['rotation'] = [1.0, 0.0, 0.0, 0.0]
+        annotation['prev'] = ''
+        annotation['next'] = ''
+        annotation['num_lidar_pts'] = 0
+        annotation['num_radar_pts'] = 0
+        with open('v1.0-mini/sample_annotation.json', 'w') as f:
+            json.dump(annotation, f, indent=4)
+
+
 
 if __name__=="__main__":
     import argparse, argcomplete
