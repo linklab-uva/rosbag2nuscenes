@@ -299,7 +299,6 @@ def write_scene(argdict):
                 width = 0
                 saved_points = np.zeros((msg.width, 5))
                 point_num = 0
-                msg.fields.pop()
                 for point in read_points(msg, skip_nans=True, field_names=['x', 'y', 'z', 'intensity']):
                     saved_points[point_num,0]=point[0]
                     saved_points[point_num,1]=point[1]
