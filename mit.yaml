@@ -1,8 +1,12 @@
 BAG_INFO:
   TEAM: MIT-PITT-RW
+  VEHICLE_NUM: 8
   DESCRIPTION: Low speed multi-agent laps with KAIST
-  ODOM_TOPIC: /vehicle_8/local_odometry
-  TRACK: IMS
+  ODOM_TOPIC: /local_odometry
+  TRACK: LVMS
+  CAMERA_CALIB:
+    TYPE: topic
+    LOC:
 SENSOR_INFO:
   LIDAR_FRONT:
     TOPIC: /luminar_front_points

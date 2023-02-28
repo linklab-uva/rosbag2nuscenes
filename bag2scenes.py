@@ -23,6 +23,10 @@ import cv2
 from cv_bridge import CvBridge
 import math
 
+from urdf_parser_py import urdf
+from scipy.spatial.transform import Rotation
+
+
 def get_rosbag_options(path, serialization_format="cdr", storage_id="sqlite3"):
     storage_options = rosbag2_py.StorageOptions(uri=path, storage_id=storage_id)
 
@@ -51,6 +55,8 @@ def headerKey( tup ):
 def write_scene(argdict):
     bag_dir = os.path.normpath(os.path.abspath(argdict["bag_in"]))
     rosbag_file = argdict["bag_in"]
+    urdf_file = argdict['urdf_file']
+    target_dir = '/data/NUSCENES'
     metadatafile : str = os.path.join(bag_dir, "metadata.yaml")
     param_file = os.path.normpath(os.path.abspath(argdict["param_file"]))
     # Read in param file
@@ -60,6 +66,14 @@ def write_scene(argdict):
         param_dict : dict = yaml.load(f, Loader=yaml.SafeLoader)
     # Extract info from param file
     track_name = param_dict["BAG_INFO"]["TRACK"]
+    namespace  = '/vehicle_{}'.format(param_dict["BAG_INFO"]["VEHICLE_NUM"])
+    odom_topic = namespace + param_dict["BAG_INFO"]["ODOM_TOPIC"]
+
+    # Load Camera Intrinsic Matrices from File
+    calib_loc = None
+    if param_dict["BAG_INFO"]["CAMERA_CALIB"]['TYPE'] == 'file':
+        calib_loc = param_dict["BAG_INFO"]["CAMERA_CALIB"]['LOC']
+
     lidar_topics = dict()
     radar_topics = dict()
     camera_topics = dict()
@@ -68,14 +82,17 @@ def write_scene(argdict):
         modality = sensor_name.split('_')[0]
         if modality == "LIDAR":
             if param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]:
-                lidar_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
+                lidar_topics[namespace + param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
         elif modality == "RADAR":
             if param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]:
-                radar_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
+                radar_topics[namespace + param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
         elif modality == "CAMERA":
             if param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]:
-                camera_topics[param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
-                camera_calibs[param_dict["SENSOR_INFO"][sensor_name]["FRAME"]] = param_dict["SENSOR_INFO"][sensor_name]["CALIB"]
+                camera_topics[namespace + param_dict["SENSOR_INFO"][sensor_name]["TOPIC"]] = sensor_name
+                if calib_loc is None:
+                    camera_calibs[param_dict["SENSOR_INFO"][sensor_name]["FRAME"]] = param_dict["SENSOR_INFO"][sensor_name]["CALIB"]
+                else:
+                    camera_calibs[param_dict["SENSOR_INFO"][sensor_name]["FRAME"]] = namespace + param_dict["SENSOR_INFO"][sensor_name]["CALIB"]
         else:
             raise ValueError("Invalid sensor %s in %s. Ensure sensor is of type LIDAR, RADAR, or CAMERA and is named [SENSOR TYPE]_[SENSOR LOCATION]" % (sensor_name, param_file))
     # Extract metadata from bag directory
@@ -92,18 +109,18 @@ def write_scene(argdict):
     for idx in tqdm(iterable=range(total_msgs)):
         if(reader.has_next()):
             (topic, data, t) = reader.read_next()
-            if topic == param_dict["BAG_INFO"]["ODOM_TOPIC"] or topic == '/tf_static' or topic in camera_calibs.values():
+            if topic == odom_topic or topic in camera_calibs.values():
                 msg_type = type_map[topic]
                 msg_type_full = get_message(msg_type)
                 msg = deserialize_message(data, msg_type_full)
                 msg_dict[topic].append((t, msg))
 
-    if not os.path.isdir('v1.0-mini'):
-        os.mkdir('v1.0-mini')
+    if not os.path.isdir(target_dir + '/v1.0-mini'):
+        os.mkdir(target_dir + '/v1.0-mini')
     # Create log.json
     log_token = token_hex(16)
-    if os.path.exists('v1.0-mini/log.json'):
-        with open('v1.0-mini/log.json', 'r') as f:
+    if os.path.exists(target_dir + '/v1.0-mini/log.json'):
+        with open(target_dir + '/v1.0-mini/log.json', 'r') as f:
             logs = json.load(f)
     else:
         logs = []
@@ -116,12 +133,12 @@ def write_scene(argdict):
     new_log['date_captured'] = datetime.fromtimestamp(metadata_dict["starting_time"]["nanoseconds_since_epoch"] * 1e-9).strftime('%Y-%m-%d')
     new_log['location'] = track_name
     logs.append(new_log)
-    with open('v1.0-mini/log.json', 'w') as f:
+    with open(target_dir + '/v1.0-mini/log.json', 'w') as f:
         json.dump(logs, f, indent=4)
     # Create map.json
     # If map file already exists, add log_token to existing map 
-    if os.path.exists('v1.0-mini/map.json'):
-        with open('v1.0-mini/map.json', 'r') as f:
+    if os.path.exists(target_dir + '/v1.0-mini/map.json'):
+        with open(target_dir + '/v1.0-mini/map.json', 'r') as f:
             maps = json.load(f)
         new_json = []
         map_exists = False
@@ -137,11 +154,11 @@ def write_scene(argdict):
             new_map['category'] = track_name
             new_map['filename'] = ''
             new_json.append(new_map)
-        with open('v1.0-mini/map.json', 'w') as f:
+        with open(target_dir + '/v1.0-mini/map.json', 'w') as f:
             json.dump(new_json, f, indent=4)
     else:
     # Case where map.json does not exist
-        with open('v1.0-mini/map.json', 'w') as f:
+        with open(target_dir + '/v1.0-mini/map.json', 'w') as f:
             map = dict()
             map['token'] = token_hex(16)
             map['log_tokens'] = [log_token]
@@ -150,7 +167,7 @@ def write_scene(argdict):
             json.dump([map], f, indent=4)
     # Create sensor.json
     sensor_token_dict = dict()
-    if not os.path.exists('v1.0-mini/sensor.json'):
+    if not os.path.exists(target_dir + '/v1.0-mini/sensor.json'):
         sensor_configs = []
         for channel in param_dict['SENSOR_INFO']:
             sensor_config = dict()
@@ -160,71 +177,73 @@ def write_scene(argdict):
             sensor_config['token'] = sensor_token
             sensor_config['channel'] = channel
             sensor_config['modality'] = channel.split('_')[0].lower()
-            os.makedirs('samples/%s' % channel)
-            os.makedirs('sweeps/%s' % channel)
+            os.makedirs(target_dir + '/samples/%s' % channel)
+            os.makedirs(target_dir + '/sweeps/%s' % channel)
             sensor_configs.append(sensor_config)
-        with open('v1.0-mini/sensor.json', 'w') as f:
+        with open(target_dir + '/v1.0-mini/sensor.json', 'w') as f:
             json.dump(sensor_configs, f, indent=4)
     # If sensor.json exists, load existing tokens to param_dict
     else:
-        with open('v1.0-mini/sensor.json', 'r') as f:
+        with open(target_dir + '/v1.0-mini/sensor.json', 'r') as f:
             sensors = json.load(f)
             for sensor in sensors:
                 sensor_token_dict[param_dict['SENSOR_INFO'][sensor['channel']]['FRAME']] = sensor['token']
                 
     # Create calibrated_sensor.json
-    if os.path.exists('v1.0-mini/calibrated_sensor.json'):
-        with open('v1.0-mini/calibrated_sensor.json', 'r') as f:
+    robot : urdf.Robot = urdf.Robot.from_xml_file(urdf_file)
+    # Create calibrated_sensor.json
+    if os.path.exists(target_dir + '/v1.0-mini/calibrated_sensor.json'):
+        with open(target_dir + '/v1.0-mini/calibrated_sensor.json', 'r') as f:
             calibrated_sensors = json.load(f)
     else:
         calibrated_sensors = []
-    frames_received = []
-    for timestamp, msg in msg_dict['/tf_static']:
-        for transform in msg.transforms:
-            if transform.child_frame_id in sensor_token_dict.keys() and transform.child_frame_id not in frames_received:
-                calibrated_sensor_data = dict()
-                calibrated_sensor_token = token_hex(16)
-                calibrated_sensor_data['token'] = calibrated_sensor_token
-                calibrated_sensor_data['sensor_token'] = sensor_token_dict[transform.child_frame_id]
-                calibrated_sensor_data['translation'] = [transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z]
-                calibrated_sensor_data['rotation'] = [transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]
-                if transform.child_frame_id in camera_calibs:
-                    calibrated_sensor_data['camera_intrinsic'] = np.reshape(msg_dict[camera_calibs[transform.child_frame_id]][0][1].k, (3,3)).tolist()
-                else:
-                    calibrated_sensor_data['camera_intrinsic'] = []
-                # Store calibrated sensor token for use in creating sample_data.json
-                sensor_token_dict[transform.child_frame_id] = calibrated_sensor_token
-                # Mark frame as processed
-                frames_received.append(transform.child_frame_id)
-                calibrated_sensors.append(calibrated_sensor_data)
-        if len(frames_received) == len(lidar_topics) + len(radar_topics) + len(camera_topics):
-            break
-    with open('v1.0-mini/calibrated_sensor.json', 'w') as f:
+    calibrated_sensor_data = {}
+    for joint in robot.joints:
+        calibrated_sensor_data = {}
+        calibrated_sensor_token = token_hex(16)
+        calibrated_sensor_data['token'] = calibrated_sensor_token
+        if joint.child in sensor_token_dict.keys():
+            calibrated_sensor_data['sensor_token'] = sensor_token_dict[joint.child]
+        else:
+            sensor_token_dict[joint.child] = token_hex(16)
+            calibrated_sensor_data['sensor_token'] = sensor_token_dict[joint.child]
+        calibrated_sensor_data['translation'] = joint.origin.xyz
+        r = Rotation.from_euler('xyz', joint.origin.rpy).as_quat()
+        calibrated_sensor_data['rotation'] = [r[3],r[0],r[1],r[2]]
+        if joint.child in camera_calibs:
+            calibrated_sensor_data['camera_intrinsic'] = np.reshape(msg_dict[camera_calibs[joint.child]][0][1].k, (3,3)).tolist()
+        else:
+            calibrated_sensor_data['camera_intrinsic'] = []
+        # Store calibrated sensor token for use in creating sample_data.json
+        sensor_token_dict[joint.child] = calibrated_sensor_token
+        calibrated_sensors.append(calibrated_sensor_data)
+
+    with open(target_dir + '/v1.0-mini/calibrated_sensor.json', 'w') as f:
         json.dump(calibrated_sensors, f, indent=4)
     
     # Create remaining json files
     first_sample = ''
     prev_sample_token, next_sample_token = '', token_hex(16)
     scene_token = token_hex(16)
-    if os.path.exists('v1.0-mini/sample.json'):
-        with open('v1.0-mini/sample.json', 'r') as f:
+    if os.path.exists(target_dir + '/v1.0-mini/sample.json'):
+        with open(target_dir + '/v1.0-mini/sample.json', 'r') as f:
             samples = json.load(f)
     else:
         samples = []
-    if os.path.exists('v1.0-mini/sample_data.json'):
-        with open('v1.0-mini/sample_data.json', 'r') as f:
+    if os.path.exists(target_dir + '/v1.0-mini/sample_data.json'):
+        with open(target_dir + '/v1.0-mini/sample_data.json', 'r') as f:
             sample_data = json.load(f)
     else:
         sample_data = []
-    if os.path.exists('v1.0-mini/ego_pose.json'):
-        with open('v1.0-mini/ego_pose.json', 'r') as f:
+    if os.path.exists(target_dir + '/v1.0-mini/ego_pose.json'):
+        with open(target_dir + '/v1.0-mini/ego_pose.json', 'r') as f:
             ego_poses = json.load(f)
     else:
         ego_poses = []
     ego_pose_queue = []
 
     print("Extracting odometry data")
-    for timestamp, msg in tqdm(msg_dict[param_dict["BAG_INFO"]["ODOM_TOPIC"]]):
+    for timestamp, msg in tqdm(msg_dict[odom_topic]):
         # Create ego_pose.json
         ego_pose = dict()
         ego_pose_token = token_hex(16)
@@ -236,6 +255,7 @@ def write_scene(argdict):
         ego_poses.append(ego_pose)
 
     print("Extracting sensor data")
+    samples = []
     previous_sampled_timestamp = None
     nbr_samples = 0
     previous_loc = 0
@@ -355,7 +375,7 @@ def write_scene(argdict):
                 with open(filename, 'wb') as pcd_file:
                     pcd_file.write("# .PCD v0.7 - Point Cloud Data file format\nVERSION 0.7\nFIELDS x y z dyn_prop id rcs vx vy vx_comp vy_comp is_quality_valid ambig_state x_rms y_rms invalid_state pdh0 vx_rms vy_rms\nSIZE 4 4 4 1 2 4 4 4 4 4 1 1 1 1 1 1 1 1\nTYPE F F F I I F F F F F I I I I I I I I\nCOUNT 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1\nWIDTH 1\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS 1\nDATA binary\n".encode('utf-8'))
                     points.tofile(pcd_file)
-            sensor_data['filename'] = filename
+            sensor_data['filename'] = target_dir + '/' + filename
             sensor_data['fileformat'] = 'pcd'
             sensor_data['is_key_frame'] = is_key_frame
             sensor_data['height'] = height
@@ -365,7 +385,7 @@ def write_scene(argdict):
             sensor_data['next'] = data_token_dict[topic][1]
             sample_data.append(sensor_data)         
 
-    samples[-1]['next'] = ''
+    samples[-1]['next'] = ''        
     sensors_cleared = set()
     for sensor_data in reversed(sample_data):
         if sensor_data['calibrated_sensor_token'] not in sensors_cleared:
@@ -373,20 +393,21 @@ def write_scene(argdict):
             sensors_cleared.add(sensor_data['calibrated_sensor_token'])
         if len(sensors_cleared) == len(lidar_topics) + len(radar_topics) + len(camera_topics):
             break
-    with open('v1.0-mini/sample.json', 'w') as f:
-        json.dump(samples, f, indent=4)
-    with open('v1.0-mini/sample_data.json', 'w') as f:
+
+    with open(target_dir + '/v1.0-mini/sample.json', 'w') as f:
+            json.dump(samples, f, indent=4)
+    with open(target_dir + '/v1.0-mini/sample_data.json', 'w') as f:
         json.dump(sample_data, f, indent=4)
-    with open('v1.0-mini/ego_pose.json', 'w') as f:
+    with open(target_dir + '/v1.0-mini/ego_pose.json', 'w') as f:
         json.dump(ego_poses, f, indent=4)
             
     # Create scene.json
-    if os.path.exists('v1.0-mini/scene.json'):
-        with open('v1.0-mini/scene.json', 'r') as f:
+    if os.path.exists(target_dir + '/v1.0-mini/scene.json'):
+        with open(target_dir + '/v1.0-mini/scene.json', 'r') as f:
             scenes = json.load(f)
     else:
         scenes = []
-    with open('v1.0-mini/scene.json', 'w') as f:
+    with open(target_dir + '/v1.0-mini/scene.json', 'w') as f:
         scene = dict()
         scene['token'] = scene_token
         scene['log_token'] = log_token
@@ -400,11 +421,68 @@ def write_scene(argdict):
         scenes.append(scene)
         json.dump(scenes, f, indent=4)
 
+    # Create dummy taxonomy json files
+    if not os.path.exists('v1.0-mini/category.json'):
+        category = dict()
+        category_token = token_hex(16)
+        category['token'] = category_token
+        category['name'] = ''
+        category['description'] = ''
+        with open('v1.0-mini/category.json', 'w') as f:
+            json.dump(category, f, indent=4)
+    if not os.path.exists('v1.0-mini/attribute.json'):
+        attribute = dict()
+        attribute_token = token_hex(16)
+        attribute['token'] = attribute_token
+        attribute['name'] = ''
+        attribute['description'] = ''
+        with open('v1.0-mini/attribute.json', 'w') as f:
+            json.dump(attribute, f, indent=4)
+    if not os.path.exists('v1.0-mini/visibility.json'):
+        visibility = dict()
+        visibility_token = '1'
+        visibility['description'] = ''
+        visibility['token'] = visibility_token
+        visibility['level'] = ''
+        with open('v1.0-mini/visibility.json', 'w') as f:
+            json.dump(visibility, f, indent=4)
+
+    # Create dummy annotation json files
+    annotation_token = token_hex(16)
+    if not os.path.exists('v1.0-mini/instance.json'):
+        instance = dict()
+        instance_token = token_hex(16)
+        instance['token'] = instance_token
+        instance['category_token'] = category_token
+        instance['nbr_annotations'] = 0
+        instance['first_annotation_token'] = annotation_token
+        instance['last_annotation_token'] = annotation_token
+        with open('v1.0-mini/instance.json', 'w') as f:
+            json.dump(instance, f, indent=4)
+
+    if not os.path.exists('v1.0-mini/sample_annotation.json'):
+        annotation = dict()
+        annotation['token'] = annotation_token
+        annotation['sample_token'] = first_sample
+        annotation['instance_token'] = instance_token
+        annotation['visibility_token'] = visibility_token
+        annotation['attribute_tokens'] = [attribute_token]
+        annotation['translation'] = [0.0, 0.0, 0.0]
+        annotation['size'] = [0.0, 0.0, 0.0]
+        annotation['rotation'] = [1.0, 0.0, 0.0, 0.0]
+        annotation['prev'] = ''
+        annotation['next'] = ''
+        annotation['num_lidar_pts'] = 0
+        annotation['num_radar_pts'] = 0
+        with open('v1.0-mini/sample_annotation.json', 'w') as f:
+            json.dump(annotation, f, indent=4)
+
 if __name__=="__main__":
     import argparse, argcomplete
     parser = argparse.ArgumentParser(description="Label point clouds with bounding boxes.")
     parser.add_argument("bag_in", type=str, help="Bag to load")
     parser.add_argument("param_file", type=str, help="Yaml file matching topics and tf frames to channel names")
+    parser.add_argument("urdf_file", type=str, help="URDF file defining joint states")
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
     argdict : dict = vars(args)
