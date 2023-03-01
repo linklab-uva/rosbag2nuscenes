@@ -27,6 +27,7 @@ from urdf_parser_py import urdf
 from scipy.spatial.transform import Rotation
 
 
+# Load ROS2 bag 
 def get_rosbag_options(path, serialization_format="cdr", storage_id="sqlite3"):
     storage_options = rosbag2_py.StorageOptions(uri=path, storage_id=storage_id)
 
@@ -36,6 +37,7 @@ def get_rosbag_options(path, serialization_format="cdr", storage_id="sqlite3"):
 
     return storage_options, converter_options
 
+# Create Topic Dictionaries for Reference
 def open_bagfile(filepath: str, serialization_format="cdr", storage_id="sqlite3"):
     storage_options, converter_options = get_rosbag_options(filepath, serialization_format=serialization_format, storage_id=storage_id)
 
@@ -52,6 +54,7 @@ def headerKey( tup ):
     msg : Union[ tf2_msgs.msg.TFMessage, nav_msgs.msg.Odometry, sensor_msgs.msg.PointCloud, delphi_esr_msgs.msg.EsrTrack, sensor_msgs.msg.CompressedImage, sensor_msgs.msg.CameraInfo] = tup[1]
     return rclpy.time.Time.from_msg(msg.header.stamp)
 
+# Write Bag File
 def write_scene(argdict):
     bag_dir = os.path.normpath(os.path.abspath(argdict["bag_in"]))
     rosbag_file = argdict["bag_in"]
@@ -70,9 +73,10 @@ def write_scene(argdict):
     odom_topic = namespace + param_dict["BAG_INFO"]["ODOM_TOPIC"]
 
     # Load Camera Intrinsic Matrices from File
-    calib_loc = None
     if param_dict["BAG_INFO"]["CAMERA_CALIB"]['TYPE'] == 'file':
         calib_loc = param_dict["BAG_INFO"]["CAMERA_CALIB"]['LOC']
+    elif param_dict["BAG_INFO"]["CAMERA_CALIB"]['TYPE'] == 'topic':
+        calib_loc = None
 
     lidar_topics = dict()
     radar_topics = dict()
@@ -211,7 +215,16 @@ def write_scene(argdict):
         r = Rotation.from_euler('xyz', joint.origin.rpy).as_quat()
         calibrated_sensor_data['rotation'] = [r[3],r[0],r[1],r[2]]
         if joint.child in camera_calibs:
-            calibrated_sensor_data['camera_intrinsic'] = np.reshape(msg_dict[camera_calibs[joint.child]][0][1].k, (3,3)).tolist()
+            if calib_loc is None:
+                calibrated_sensor_data['camera_intrinsic'] = np.reshape(msg_dict[camera_calibs[joint.child]][0][1].k, (3,3)).tolist()
+                calibrated_sensor_data['camera_distortion'] = msg_dict[camera_calibs[joint.child]][0][1].d
+            else:
+                calib_path = os.path.join(calib_loc, joint.child,'.yaml')
+                with open(calib_path, 'r') as f:
+                    calib = yaml.safe_load(f)
+                calibrated_sensor_data['camera_intrinsic'] = [[calib['K'][0],0,calib['K'][2]],[0,calib['K'][1],calib['K'][3]],[0,0,1]]
+                calibrated_sensor_data['camera_distortion'] = calib['D']
+                
         else:
             calibrated_sensor_data['camera_intrinsic'] = []
         # Store calibrated sensor token for use in creating sample_data.json
