@@ -53,6 +53,7 @@ Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) {
     storage_filter.topics = topics_of_interest_;
     reader_.set_filter(storage_filter);
     bag_dir_ = rosbag_dir.parent_path().filename();
+    srand(time(0));
 }
 
 void Bag2Scenes::writeScene() {
@@ -67,6 +68,7 @@ void Bag2Scenes::writeScene() {
         fs::create_directory("v1.0-mini/sweeps");
     }
     std::string log_token = writeLog();
+    writeMap(log_token);
 }
 
 std::string Bag2Scenes::writeLog() {
@@ -93,7 +95,31 @@ std::string Bag2Scenes::writeLog() {
 }
 
 void Bag2Scenes::writeMap(std::string log_token) {
-
+    nlohmann::json maps;
+    if (fs::exists("v1.0-mini/map.json")) {
+        std::ifstream map_in("v1.0-mini/map.json");
+        maps = nlohmann::json::parse(map_in);
+        map_in.close();
+        for (nlohmann::json& map : maps) {
+            if (map["category"] == param_yaml_["BAG_INFO"]["TRACK"].as<std::string>()) {
+                map["log_tokens"].push_back(log_token);
+                std::ofstream map_out("v1.0-mini/map.json");
+                map_out << std::setw(4) << maps << std::endl;
+                map_out.close();
+                return;
+            }
+        }
+    }
+    nlohmann::json new_map;
+    new_map["token"] = generateToken();
+    new_map["log_tokens"] = std::vector<std::string>{log_token};
+    new_map["category"] = param_yaml_["BAG_INFO"]["TRACK"].as<std::string>();
+    new_map["filename"] = "";
+    maps.push_back(new_map);
+    std::ofstream map_out("v1.0-mini/map.json");
+    map_out << std::setw(4) << maps << std::endl;
+    map_out.close();
+    return;
 }
 
 std::string Bag2Scenes::writeSample() {

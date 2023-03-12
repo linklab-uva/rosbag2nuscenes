@@ -31,7 +31,6 @@ class Bag2Scenes {
     private:
 
         static std::string generateToken() {
-            srand(time(0));
             char token[17];
             for (int i = 0; i < 17; i++) {
                 sprintf(token + i, "%x", rand() % 16);
