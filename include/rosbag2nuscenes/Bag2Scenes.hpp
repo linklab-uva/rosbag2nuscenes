@@ -3,9 +3,15 @@
 
 #include <string>
 #include <vector>
-#include "MessageTypes.hpp"
+#include <map>
+#include "rosbag2nuscenes/MessageTypes.hpp"
+#include "rosbag2nuscenes/MessageConverter.hpp"
 #include <filesystem>
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
+#include <rosbag2_cpp/converter_interfaces/serialization_format_converter.hpp>
+#include <rosbag2_storage/storage_options.hpp>
+#include <rcpputils/asserts.hpp>
+#include "yaml-cpp/node/node.h"
 #include <Eigen/Geometry>
 
 class Bag2Scenes {
@@ -46,8 +52,17 @@ class Bag2Scenes {
         
         unsigned long writeSensor(std::string channel, std::string modality);
 
-        rosbag2_cpp::readers::SequentialReader reader;
+        rosbag2_cpp::readers::SequentialReader reader_;
 
+        std::vector<std::string> lidar_topics_;
+
+        std::vector<std::string> radar_topics_;
+
+        std::vector<std::string> camera_topics_;
+
+        YAML::Node topic_info_;
+
+        YAML::Node param_yaml_;
 
 };
 
