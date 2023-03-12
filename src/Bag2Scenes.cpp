@@ -1,6 +1,6 @@
 #include "rosbag2nuscenes/Bag2Scenes.hpp"
 
-Bag2Scenes::Bag2Scenes(const std::filesystem::path rosbag_dir, const std::filesystem::path param_file) {
+Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) {
     // Read Parameter File
     try {
         param_yaml_ = YAML::LoadFile(param_file);
@@ -23,8 +23,8 @@ Bag2Scenes::Bag2Scenes(const std::filesystem::path rosbag_dir, const std::filesy
         exit(1);
     }
     std::vector<rosbag2_storage::TopicMetadata> topic_types = reader_.get_all_topics_and_types();
+    bag_data_ = reader_.get_metadata();
     std::map<std::string, std::string> topic_to_type;
-    std::vector<std::string> topics_of_interest;
     for (std::vector<rosbag2_storage::TopicMetadata>::iterator itr  = topic_types.begin(); itr != topic_types.end(); itr++) {
         topic_to_type.insert({itr->name, itr->type});
     }
@@ -35,7 +35,7 @@ Bag2Scenes::Bag2Scenes(const std::filesystem::path rosbag_dir, const std::filesy
         if (topic != "null") {
             topic_info_[topic]["TYPE"] = topic_to_type[topic];
             topic_info_[topic]["SENSOR"] = sensor_name;
-            topics_of_interest.push_back(topic);
+            topics_of_interest_.push_back(topic);
             if (modality == "LIDAR") {
                 lidar_topics_.push_back(topic);
             } else if (modality == "RADAR") {
@@ -47,33 +47,62 @@ Bag2Scenes::Bag2Scenes(const std::filesystem::path rosbag_dir, const std::filesy
             }
         }
     }
+    topics_of_interest_.push_back(param_yaml_["BAG_INFO"]["ODOM_TOPIC"].as<std::string>());
     // Storage Filter
     rosbag2_storage::StorageFilter storage_filter{};
-    storage_filter.topics = topics_of_interest;
+    storage_filter.topics = topics_of_interest_;
     reader_.set_filter(storage_filter);
+    bag_dir_ = rosbag_dir.parent_path().filename();
 }
 
 void Bag2Scenes::writeScene() {
-    rosbag2_storage::BagMetadata bag_data = reader_.get_metadata();
+    int total_msgs = 0;
+    for (std::vector<rosbag2_storage::TopicInformation>::iterator itr = bag_data_.topics_with_message_count.begin(); itr != bag_data_.topics_with_message_count.end(); itr++) {
+        if (std::find(topics_of_interest_.begin(), topics_of_interest_.end(), itr->topic_metadata.name) != topics_of_interest_.end()) {
+            total_msgs += itr->message_count;
+        }
+    }
+    if (!fs::exists("v1.0-mini")) {
+        fs::create_directories("v1.0-mini/samples");
+        fs::create_directory("v1.0-mini/sweeps");
+    }
+    std::string log_token = writeLog();
+}
+
+std::string Bag2Scenes::writeLog() {
+    std::string log_token = generateToken();
+    nlohmann::json logs;
+    if (fs::exists("v1.0-mini/log.json")) {
+        std::ifstream log_in("v1.0-mini/log.json");
+        logs = nlohmann::json::parse(log_in);
+        log_in.close();
+    }
+    nlohmann::json new_log;
+    new_log["token"] = log_token;
+    new_log["logfile"] = bag_dir_;
+    new_log["vehicle"] = param_yaml_["BAG_INFO"]["TEAM"].as<std::string>();
+    std::stringstream ss;
+    const long time = (const long) std::floor(bag_data_.starting_time.time_since_epoch().count() * std::pow(10,-9));
+    ss << std::put_time(std::localtime(&time), "%Y-%m-%d");
+    new_log["date_captured"] = ss.str();
+    new_log["location"] = param_yaml_["BAG_INFO"]["TRACK"].as<std::string>();
+    logs.push_back(new_log);
+    std::ofstream log_out("v1.0-mini/log.json");
+    log_out << std::setw(4) << logs << std::endl;
+    return log_token;
+}
+
+void Bag2Scenes::writeMap(std::string log_token) {
 
 }
 
-unsigned long Bag2Scenes::writeLog() {
-    unsigned long temp = 0;
+std::string Bag2Scenes::writeSample() {
+    std::string temp = 0;
     return temp;
 }
 
-void Bag2Scenes::writeMap(unsigned long log_token) {
-
-}
-
-unsigned long Bag2Scenes::writeSample() {
-    unsigned long temp = 0;
-    return temp;
-}
-
-unsigned long Bag2Scenes::writeSampleData(SensorMessageT data) {
-    unsigned long temp = 0;
+std::string Bag2Scenes::writeSampleData(SensorMessageT data) {
+    std::string temp = 0;
     return temp;
 }
 
@@ -85,7 +114,7 @@ void Bag2Scenes::writeCalibratedSensor(Eigen::Quaternionf sensor_pose) {
 
 }
 
-unsigned long Bag2Scenes::writeSensor(std::string channel, std::string modality) {
-    unsigned long temp = 0;
+std::string Bag2Scenes::writeSensor(std::string channel, std::string modality) {
+    std::string temp = 0;
     return temp;
 }
