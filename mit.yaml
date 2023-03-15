@@ -3,6 +3,7 @@ BAG_INFO:
   DESCRIPTION: Low speed multi-agent laps with KAIST
   ODOM_TOPIC: /vehicle_8/local_odometry
   TRACK: IMS
+  URDF: av21.urdf
 SENSOR_INFO:
   LIDAR_FRONT:
     TOPIC: /luminar_front_points

@@ -10,9 +10,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(delphi_esr_msgs REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rosidl_typesupport_cpp REQUIRED)
+find_package(rosidl_typesupport_introspection_cpp REQUIRED)
+find_package(rosbag2 REQUIRED)
+find_package(rosbag2_storage REQUIRED)
 find_package(rosbag2_cpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(delphi_esr_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -32,4 +38,4 @@ file(GLOB_RECURSE SOURCE_FILES
 )
 
 add_executable(${PROJECT_NAME} main.cpp ${SOURCE_FILES})
-ament_target_dependencies(${PROJECT_NAME} sensor_msgs delphi_esr_msgs rosbag2_cpp)
+ament_target_dependencies(${PROJECT_NAME} sensor_msgs delphi_esr_msgs nav_msgs rosbag2_cpp rclcpp rosbag2 rosbag2_storage)

@@ -1,8 +1,12 @@
 #ifndef MESSAGE_TYPES_HPP
 #define MESSAGE_TYPES_HPP
 
+#include <string>
+#include <vector>
+
 struct SensorMessageT {
-    //TODO
+    unsigned long timestamp;
+    std::string frame_id;
 };
 
 struct RadarMessageT : SensorMessageT {
@@ -15,6 +19,15 @@ struct LidarMessageT : SensorMessageT {
 
 struct CameraMessageT : SensorMessageT {
     //TODO
+};
+
+struct OdometryMessageT {
+    unsigned long timestamp;
+};
+
+struct CameraCalibrationT {
+    std::string frame_id;
+    std::vector<std::vector<float>> intrinsic;
 };
 
 

@@ -2,6 +2,8 @@
 #define BAG2SCENES_HPP
 
 #include <string>
+#include <set>
+#include <algorithm>
 #include <vector>
 #include <map>
 #include "MessageTypes.hpp"
@@ -11,13 +13,17 @@
 #include <iomanip>
 #include <sstream>
 #include <cmath>
+#include <rclcpp/rclcpp.hpp>
 #include <chrono>
+#include "rosbag2_cpp/typesupport_helpers.hpp"
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
+#include <rclcpp/serialization.hpp>
 #include <rosbag2_cpp/converter_interfaces/serialization_format_converter.hpp>
 #include <rosbag2_storage/storage_options.hpp>
 #include <rcpputils/asserts.hpp>
 #include "yaml-cpp/node/node.h"
 #include <nlohmann/json.hpp>
+#include "pugixml.hpp"
 #include <Eigen/Geometry>
 
 namespace fs = std::filesystem;
@@ -30,20 +36,11 @@ class Bag2Scenes {
 
     private:
 
-        static std::string generateToken() {
-            char token[17];
-            for (int i = 0; i < 17; i++) {
-                sprintf(token + i, "%x", rand() % 16);
-            }
-            return std::string(token);
-        }
+        std::string generateToken();
+
+        std::vector<float> splitString(std::string str);
         
-        /**
-         * @brief 
-         * 
-         * @return std::string Token of log
-         */
-        std::string writeLog();
+        void writeLog();
 
         void writeMap(std::string log_token);
 
@@ -64,19 +61,22 @@ class Bag2Scenes {
 
         void writeEgoPose(Eigen::Quaternionf ego_pose);
 
-        void writeCalibratedSensor(Eigen::Quaternionf sensor_pose);
+        void writeCalibratedSensor(std::string frame, std::vector<std::vector<float>> camera_intrinsic);
 
-        std::string writeSensor(std::string channel, std::string modality);
+        std::string writeSensor(std::string channel);
 
 
         rosbag2_cpp::readers::SequentialReader reader_;
+        std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer_;
         rosbag2_storage::BagMetadata bag_data_;
         std::string bag_dir_;
         std::vector<std::string> lidar_topics_;
         std::vector<std::string> radar_topics_;
         std::vector<std::string> camera_topics_;
+        std::vector<std::string> camera_calibs_;
         std::vector<std::string> topics_of_interest_;
-        YAML::Node topic_info_;
+        std::map<std::string, std::string> topic_to_type_;
+        YAML::Node frame_info_;
         YAML::Node param_yaml_;
 
 };
