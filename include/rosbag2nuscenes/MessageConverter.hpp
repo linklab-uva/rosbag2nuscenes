@@ -29,11 +29,11 @@ class MessageConverter {
         void getROSMsg(std::string type, std::shared_ptr<rosbag2_cpp::rosbag2_introspection_message_t> message_wrapper);
 
     private:
-        delphi_esr_msgs::msg::EsrTrack radar_msg_;
-        sensor_msgs::msg::PointCloud2 lidar_msg_;
-        sensor_msgs::msg::CompressedImage camera_msg_;
-        sensor_msgs::msg::CameraInfo camera_calib_msg_;
-        nav_msgs::msg::Odometry odometry_msg_;
+        delphi_esr_msgs::msg::EsrTrack radar_ros_msg_;
+        sensor_msgs::msg::PointCloud2 lidar_ros_msg_;
+        sensor_msgs::msg::CompressedImage camera_ros_msg_;
+        sensor_msgs::msg::CameraInfo camera_info_ros_msg_;
+        nav_msgs::msg::Odometry odometry_ros_msg_;
 
 
 

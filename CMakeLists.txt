@@ -23,6 +23,10 @@ find_package(OpenCV REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(Eigen3 REQUIRED)
 
+if (NOT TARGET indicators)
+    add_subdirectory(indicators)
+endif()
+
 if (NOT TARGET yaml-cpp)
     add_subdirectory(yaml-cpp)
 endif() 
@@ -30,7 +34,9 @@ endif()
 include_directories(
     ${OpenCV_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
-    include/
+    ${CMAKE_SOURCE_DIR}/indicators/include/
+    ${CMAKE_SOURCE_DIR}/yaml-cpp/include/
+    ${CMAKE_SOURCE_DIR}/include/
 )
 
 file(GLOB_RECURSE SOURCE_FILES

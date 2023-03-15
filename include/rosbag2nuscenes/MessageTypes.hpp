@@ -23,6 +23,8 @@ struct CameraMessageT : SensorMessageT {
 
 struct OdometryMessageT {
     unsigned long timestamp;
+    std::vector<double> position;
+    std::vector<double> orientation;
 };
 
 struct CameraCalibrationT {

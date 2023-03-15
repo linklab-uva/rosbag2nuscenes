@@ -69,19 +69,32 @@ void Bag2Scenes::writeScene() {
             total_msgs += itr->message_count;
         }
     }
+    indicators::show_console_cursor(false);
+    indicators::BlockProgressBar bar{
+        indicators::option::BarWidth{80},
+        indicators::option::ForegroundColor{indicators::Color::white},
+        indicators::option::FontStyles{
+            std::vector<indicators::FontStyle>{indicators::FontStyle::bold}},
+        indicators::option::MaxProgress{total_msgs}
+    };
     if (!fs::exists("v1.0-mini")) {
         fs::create_directories("v1.0-mini/samples");
         fs::create_directory("v1.0-mini/sweeps");
     }
     writeLog();
     std::unordered_set<std::string> calibrated_sensors;
+    nlohmann::json ego_poses;
+    if (fs::exists("v1.0-mini/ego_poses.json")) {
+        std::ifstream ego_poses_in("v1.0-mini/ego_poses.json");
+        ego_poses = nlohmann::json::parse(ego_poses_in);
+        ego_poses_in.close();
+    }
     for (int i = 0; i < total_msgs; i++) {
         if (reader_.has_next()) {
             auto serialized_message = reader_.read_next();
             auto message_wrapper = std::make_shared<rosbag2_cpp::rosbag2_introspection_message_t>();
             std::string msg_type = topic_to_type_[serialized_message->topic_name];
             message_converter.getROSMsg(msg_type, message_wrapper);
-            std::cout << msg_type << std::endl;
             auto library = rosbag2_cpp::get_typesupport_library(msg_type, "rosidl_typesupport_cpp");
             auto type_support = rosbag2_cpp::get_typesupport_handle(msg_type, "rosidl_typesupport_cpp", library);
             cdr_deserializer_->deserialize(serialized_message, type_support, message_wrapper);
@@ -101,6 +114,7 @@ void Bag2Scenes::writeScene() {
                 }
             } else if (msg_type == "nav_msgs/msg/Odometry") {
                 OdometryMessageT odometry_message = message_converter.getOdometryMessage();
+                writeEgoPose(odometry_message, ego_poses);
             } else if (msg_type == "sensor_msgs/msg/CameraInfo") {
                 CameraCalibrationT camera_calibration = message_converter.getCameraCalibration();
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
@@ -108,10 +122,15 @@ void Bag2Scenes::writeScene() {
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
             }
+            }
+            bar.set_option(indicators::option::PostfixText{
+                std::to_string(i) + "/" + std::to_string(total_msgs)
+            });
+            bar.tick();
         }
-    }
-    
-    
+    std::ofstream ego_poses_out("v1.0-mini/ego_poses.json");
+    ego_poses_out << std::setw(4) << ego_poses << std::endl;
+    indicators::show_console_cursor(true);
 }
 
 void Bag2Scenes::writeLog() {
@@ -175,8 +194,13 @@ std::string Bag2Scenes::writeSampleData(SensorMessageT data) {
     return temp;
 }
 
-void Bag2Scenes::writeEgoPose(Eigen::Quaternionf ego_pose) {
-
+void Bag2Scenes::writeEgoPose(OdometryMessageT ego_pose, nlohmann::json& previous_poses) {
+    nlohmann::json new_pose;
+    new_pose["token"] = generateToken();
+    new_pose["timestamp"] = ego_pose.timestamp;
+    new_pose["rotation"] = ego_pose.orientation;
+    new_pose["translation"] = ego_pose.position;
+    previous_poses.push_back(new_pose);
 }
 
 void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::vector<float>> camera_intrinsic) {
@@ -211,7 +235,8 @@ void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::ve
             quat = Eigen::AngleAxisf(euler_angles[0], Eigen::Vector3f::UnitX()) 
                     * Eigen::AngleAxisf(euler_angles[1], Eigen::Vector3f::UnitY())
                     * Eigen::AngleAxisf(euler_angles[2], Eigen::Vector3f::UnitZ());
-            calibrated_sensor["rotation"] = quat.coeffs();
+            std::vector<float> wxyz = {quat.w(), quat.x(), quat.y(), quat.z()};
+            calibrated_sensor["rotation"] = wxyz;
             calibrated_sensor["camera_intrinsic"] = camera_intrinsic;
             calibrated_sensors.push_back(calibrated_sensor);
             std::ofstream calibrated_sensor_out("v1.0-mini/calibrated_sensor.json");

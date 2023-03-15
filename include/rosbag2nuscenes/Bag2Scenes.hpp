@@ -25,6 +25,9 @@
 #include <nlohmann/json.hpp>
 #include "pugixml.hpp"
 #include <Eigen/Geometry>
+#include <indicators/cursor_control.hpp>
+#include <indicators/block_progress_bar.hpp>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -59,7 +62,7 @@ class Bag2Scenes {
          */
         std::string writeSampleData(SensorMessageT data);
 
-        void writeEgoPose(Eigen::Quaternionf ego_pose);
+        void writeEgoPose(OdometryMessageT ego_pose, nlohmann::json& previous_poses);
 
         void writeCalibratedSensor(std::string frame, std::vector<std::vector<float>> camera_intrinsic);
 
