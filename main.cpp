@@ -13,5 +13,4 @@ int main(int argc, char** argv) {
     }
     Bag2Scenes converter(argv[1], argv[2]);
     converter.writeScene();
-    printf("Done.\n");
 }

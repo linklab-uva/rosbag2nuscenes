@@ -10,21 +10,20 @@ Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) {
         exit(1);
     }
     // Storage Options
-    rosbag2_storage::StorageOptions storage_options{};
-    storage_options.uri = rosbag_dir;
-    storage_options.storage_id = "sqlite3";
+    storage_options_.uri = rosbag_dir;
+    storage_options_.storage_id = "sqlite3";
     // Converter Options
-    rosbag2_cpp::ConverterOptions converter_options{};
-    converter_options.input_serialization_format = "cdr";
-    converter_options.output_serialization_format = "cdr";
+    converter_options_.input_serialization_format = "cdr";
+    converter_options_.output_serialization_format = "cdr";
     // Open Bag and Store Metadata
+    rosbag2_cpp::readers::SequentialReader reader;
     try {
-        reader_.open(storage_options, converter_options);
+        reader.open(storage_options_, converter_options_);
     } catch (std::exception e) {
         exit(1);
     }
-    std::vector<rosbag2_storage::TopicMetadata> topic_types = reader_.get_all_topics_and_types();
-    bag_data_ = reader_.get_metadata();
+    std::vector<rosbag2_storage::TopicMetadata> topic_types = reader.get_all_topics_and_types();
+    bag_data_ = reader.get_metadata();
     for (std::vector<rosbag2_storage::TopicMetadata>::iterator itr  = topic_types.begin(); itr != topic_types.end(); itr++) {
         topic_to_type_.insert({itr->name, itr->type});
     }
@@ -49,34 +48,15 @@ Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) {
             }
         }
     }
-    topics_of_interest_.push_back(param_yaml_["BAG_INFO"]["ODOM_TOPIC"].as<std::string>());
-    // Storage Filter
-    rosbag2_storage::StorageFilter storage_filter{};
-    storage_filter.topics = topics_of_interest_;
-    reader_.set_filter(storage_filter);
-    // Deserialization Tools
-    rosbag2_cpp::SerializationFormatConverterFactory factory;
-    cdr_deserializer_ = factory.load_deserializer("cdr");
+    reader.close();
     bag_dir_ = rosbag_dir.parent_path().filename();
     srand(time(0));
+    indicators::show_console_cursor(false);
 }
 
 void Bag2Scenes::writeScene() {
     MessageConverter message_converter;
     int total_msgs = 0;
-    for (std::vector<rosbag2_storage::TopicInformation>::iterator itr = bag_data_.topics_with_message_count.begin(); itr != bag_data_.topics_with_message_count.end(); itr++) {
-        if (std::find(topics_of_interest_.begin(), topics_of_interest_.end(), itr->topic_metadata.name) != topics_of_interest_.end()) {
-            total_msgs += itr->message_count;
-        }
-    }
-    indicators::show_console_cursor(false);
-    indicators::BlockProgressBar bar{
-        indicators::option::BarWidth{80},
-        indicators::option::ForegroundColor{indicators::Color::white},
-        indicators::option::FontStyles{
-            std::vector<indicators::FontStyle>{indicators::FontStyle::bold}},
-        indicators::option::MaxProgress{total_msgs}
-    };
     if (!fs::exists("v1.0-mini")) {
         fs::create_directories("v1.0-mini/samples");
         fs::create_directory("v1.0-mini/sweeps");
@@ -84,53 +64,70 @@ void Bag2Scenes::writeScene() {
     writeLog();
     std::unordered_set<std::string> calibrated_sensors;
     nlohmann::json ego_poses;
+    nlohmann::json samples;
+    nlohmann::json sample_data;
     if (fs::exists("v1.0-mini/ego_poses.json")) {
         std::ifstream ego_poses_in("v1.0-mini/ego_poses.json");
         ego_poses = nlohmann::json::parse(ego_poses_in);
         ego_poses_in.close();
     }
-    for (int i = 0; i < total_msgs; i++) {
-        if (reader_.has_next()) {
-            auto serialized_message = reader_.read_next();
-            auto message_wrapper = std::make_shared<rosbag2_cpp::rosbag2_introspection_message_t>();
-            std::string msg_type = topic_to_type_[serialized_message->topic_name];
-            message_converter.getROSMsg(msg_type, message_wrapper);
-            auto library = rosbag2_cpp::get_typesupport_library(msg_type, "rosidl_typesupport_cpp");
-            auto type_support = rosbag2_cpp::get_typesupport_handle(msg_type, "rosidl_typesupport_cpp", library);
-            cdr_deserializer_->deserialize(serialized_message, type_support, message_wrapper);
-            if (msg_type ==  "delphi_esr_msgs/msg/EsrTrack") {
-                RadarMessageT radar_message = message_converter.getRadarMessage();
-                if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-                    writeCalibratedSensor(radar_message.frame_id, std::vector<std::vector<float>>());
-                    calibrated_sensors.insert({serialized_message->topic_name});
-                }
-            } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
-                CameraMessageT camera_message = message_converter.getCameraMessage();
-            } else if (msg_type == "sensor_msgs/msg/PointCloud2") {
-                LidarMessageT lidar_message = message_converter.getLidarMessage();
-                if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-                    writeCalibratedSensor(lidar_message.frame_id, std::vector<std::vector<float>>());
-                    calibrated_sensors.insert({serialized_message->topic_name});
-                }
-            } else if (msg_type == "nav_msgs/msg/Odometry") {
-                OdometryMessageT odometry_message = message_converter.getOdometryMessage();
-                writeEgoPose(odometry_message, ego_poses);
-            } else if (msg_type == "sensor_msgs/msg/CameraInfo") {
-                CameraCalibrationT camera_calibration = message_converter.getCameraCalibration();
-                if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-                    writeCalibratedSensor(camera_calibration.frame_id, camera_calibration.intrinsic);
-                    calibrated_sensors.insert({serialized_message->topic_name});
-                }
-            }
-            }
-            bar.set_option(indicators::option::PostfixText{
-                std::to_string(i) + "/" + std::to_string(total_msgs)
-            });
-            bar.tick();
-        }
+    if (fs::exists("v1.0-mini/sample.json")) {
+        std::ifstream sample_in("v1.0-mini/sample.json");
+        samples = nlohmann::json::parse(sample_in);
+        sample_in.close();
+    }
+    if (fs::exists("v1.0-mini/sample_data.json")) {
+        std::ifstream sample_data_in("v1.0-mini/sample_data.json");
+        sample_data = nlohmann::json::parse(sample_data_in);
+        sample_data_in.close();
+    }
+    // Write odometry data
+    std::thread ego_pose_thread(&Bag2Scenes::writeEgoPose, this, std::ref(ego_poses));
+    // Write sensor data
+    std::thread sensor_data_thread(&Bag2Scenes::writeSampleData, this, std::ref(sample_data));
+    unsigned long previous_sampled_timestamp = 0;
+    // for (int i = 0; i < total_msgs; i++) {
+    //     if (reader_.has_next()) {
+    //         auto serialized_message = reader_.read_next();
+    //         auto message_wrapper = std::make_shared<rosbag2_cpp::rosbag2_introspection_message_t>();
+    //         std::string msg_type = topic_to_type_[serialized_message->topic_name];
+    //         if (calibrated_sensors.size() == lidar_topics_.size() + radar_topics_.size() + camera_calibs_.size() && msg_type == "sensor_msgs/msg/CameraInfo") {
+    //             continue;
+    //         }
+    //         message_converter.getROSMsg(msg_type, message_wrapper);
+    //         auto library = rosbag2_cpp::get_typesupport_library(msg_type, "rosidl_typesupport_cpp");
+    //         auto type_support = rosbag2_cpp::get_typesupport_handle(msg_type, "rosidl_typesupport_cpp", library);
+    //         cdr_deserializer_->deserialize(serialized_message, type_support, message_wrapper);
+    //         if (msg_type ==  "delphi_esr_msgs/msg/EsrTrack") {
+    //             RadarMessageT radar_message = message_converter.getRadarMessage();
+    //             if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
+    //                 writeCalibratedSensor(radar_message.frame_id, std::vector<std::vector<float>>());
+    //                 calibrated_sensors.insert({serialized_message->topic_name});
+    //             }
+    //         } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
+    //             CameraMessageT camera_message = message_converter.getCameraMessage();
+    //         } else if (msg_type == "sensor_msgs/msg/PointCloud2") {
+    //             LidarMessageT lidar_message = message_converter.getLidarMessage();
+    //             if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
+    //                 writeCalibratedSensor(lidar_message.frame_id, std::vector<std::vector<float>>());
+    //                 calibrated_sensors.insert({serialized_message->topic_name});
+    //             }
+    //         } else if (msg_type == "nav_msgs/msg/Odometry") {
+                
+    //         } else if (msg_type == "sensor_msgs/msg/CameraInfo") {
+    //             CameraCalibrationT camera_calibration = message_converter.getCameraCalibration();
+    //             if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
+    //                 writeCalibratedSensor(camera_calibration.frame_id, camera_calibration.intrinsic);
+    //                 calibrated_sensors.insert({serialized_message->topic_name});
+    //             }
+    //         }
+    //     }
+    // }
+    ego_pose_thread.join();
     std::ofstream ego_poses_out("v1.0-mini/ego_poses.json");
     ego_poses_out << std::setw(4) << ego_poses << std::endl;
     indicators::show_console_cursor(true);
+    std::cout << "Done." << std::endl;
 }
 
 void Bag2Scenes::writeLog() {
@@ -189,18 +186,61 @@ std::string Bag2Scenes::writeSample() {
     return temp;
 }
 
-std::string Bag2Scenes::writeSampleData(SensorMessageT data) {
-    std::string temp = 0;
-    return temp;
+void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
+    int sensor_data_msgs = 0;
+    for (rosbag2_storage::TopicInformation topic_data : bag_data_.topics_with_message_count) {
+        if (std::find(topics_of_interest_.begin(), topics_of_interest_.end(), itr->topic_metadata.name) != topics_of_interest_.end()) {
+            sensor_data_msgs += topic_data.message_count;
+        }
+    }
 }
 
-void Bag2Scenes::writeEgoPose(OdometryMessageT ego_pose, nlohmann::json& previous_poses) {
-    nlohmann::json new_pose;
-    new_pose["token"] = generateToken();
-    new_pose["timestamp"] = ego_pose.timestamp;
-    new_pose["rotation"] = ego_pose.orientation;
-    new_pose["translation"] = ego_pose.position;
-    previous_poses.push_back(new_pose);
+void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
+    std::string odometry_topic = param_yaml_["BAG_INFO"]["ODOM_TOPIC"].as<std::string>();
+    int odometry_msgs = 0;
+    for (rosbag2_storage::TopicInformation topic_data : bag_data_.topics_with_message_count) {
+        if (topic_data.topic_metadata.name == odometry_topic) {
+            odometry_msgs = topic_data.message_count;
+        }
+    }
+    indicators::BlockProgressBar bar{
+        indicators::option::BarWidth{80},
+        indicators::option::ForegroundColor{indicators::Color::white},
+        indicators::option::FontStyles{
+            std::vector<indicators::FontStyle>{indicators::FontStyle::bold}},
+        indicators::option::MaxProgress{odometry_msgs}
+    };
+    rosbag2_cpp::readers::SequentialReader reader;
+    reader.open(storage_options_, converter_options_);
+    rosbag2_storage::StorageFilter storage_filter{};
+    storage_filter.topics = std::vector<std::string> {odometry_topic};
+    reader.set_filter(storage_filter);
+    rosbag2_cpp::SerializationFormatConverterFactory factory;
+    std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer = factory.load_deserializer("cdr");
+    MessageConverter message_converter;
+    for (int i = 0; i < odometry_msgs; i++) {
+        if (reader.has_next()) {
+            auto serialized_message = reader.read_next();
+            auto message_wrapper = std::make_shared<rosbag2_cpp::rosbag2_introspection_message_t>();
+            std::string msg_type = topic_to_type_[serialized_message->topic_name];
+            message_converter.getROSMsg(msg_type, message_wrapper);
+            auto library = rosbag2_cpp::get_typesupport_library(msg_type, "rosidl_typesupport_cpp");
+            auto type_support = rosbag2_cpp::get_typesupport_handle(msg_type, "rosidl_typesupport_cpp", library);
+            cdr_deserializer->deserialize(serialized_message, type_support, message_wrapper);
+            OdometryMessageT odometry_message = message_converter.getOdometryMessage();
+            nlohmann::json new_pose;
+            new_pose["token"] = generateToken();
+            new_pose["timestamp"] = odometry_message.timestamp;
+            new_pose["rotation"] = odometry_message.orientation;
+            new_pose["translation"] = odometry_message.position;
+            previous_poses.push_back(new_pose);
+            bar.set_option(indicators::option::PostfixText{
+                std::to_string(i) + "/" + std::to_string(odometry_msgs)
+            });
+            bar.tick();
+        }
+    }
+    std::cout << std::endl;
 }
 
 void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::vector<float>> camera_intrinsic) {

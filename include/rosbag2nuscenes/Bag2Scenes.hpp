@@ -54,23 +54,17 @@ class Bag2Scenes {
          */
         std::string writeSample();
 
-        /**
-         * @brief 
-         * 
-         * @param data 
-         * @return std::string Token of sample data if is_key_frame, else 0
-         */
-        std::string writeSampleData(SensorMessageT data);
+        void writeSampleData(nlohmann::json& previous_data);
 
-        void writeEgoPose(OdometryMessageT ego_pose, nlohmann::json& previous_poses);
+        void writeEgoPose(nlohmann::json& previous_poses);
 
         void writeCalibratedSensor(std::string frame, std::vector<std::vector<float>> camera_intrinsic);
 
         std::string writeSensor(std::string channel);
 
 
-        rosbag2_cpp::readers::SequentialReader reader_;
-        std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer_;
+        rosbag2_storage::StorageOptions storage_options_;
+        rosbag2_cpp::ConverterOptions converter_options_;
         rosbag2_storage::BagMetadata bag_data_;
         std::string bag_dir_;
         std::vector<std::string> lidar_topics_;
