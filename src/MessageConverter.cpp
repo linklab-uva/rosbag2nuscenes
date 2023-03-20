@@ -14,6 +14,10 @@ RadarMessageT MessageConverter::getRadarMessage() {
 LidarMessageT MessageConverter::getLidarMessage() {
     LidarMessageT lidar_msg;
     lidar_msg.frame_id = lidar_ros_msg_.header.frame_id;
+    std::stringstream ss;
+    ss << lidar_ros_msg_.header.stamp.sec << "." << lidar_ros_msg_.header.stamp.nanosec;
+    lidar_msg.timestamp = stoi(ss.str());
+    pcl::fromROSMsg(lidar_ros_msg_, lidar_msg.cloud);
     return lidar_msg;
 }
 

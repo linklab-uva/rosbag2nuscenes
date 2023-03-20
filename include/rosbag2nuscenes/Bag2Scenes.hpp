@@ -8,6 +8,7 @@
 #include <map>
 #include "MessageTypes.hpp"
 #include "MessageConverter.hpp"
+#include "SensorDataWriter.hpp"
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -27,6 +28,7 @@
 #include <Eigen/Geometry>
 #include <indicators/cursor_control.hpp>
 #include <indicators/block_progress_bar.hpp>
+#include <indicators/multi_progress.hpp>
 #include <thread>
 
 namespace fs = std::filesystem;
@@ -42,6 +44,8 @@ class Bag2Scenes {
         std::string generateToken();
 
         std::vector<float> splitString(std::string str);
+
+        fs::path getFilename(std::string channel, bool is_key_frame, unsigned long timestamp);
         
         void writeLog();
 
@@ -75,7 +79,10 @@ class Bag2Scenes {
         std::map<std::string, std::string> topic_to_type_;
         YAML::Node frame_info_;
         YAML::Node param_yaml_;
-
+        indicators::BlockProgressBar odometry_bar_;
+        indicators::BlockProgressBar sensor_data_bar_;
+        indicators::MultiProgress<indicators::BlockProgressBar, 2> progress_bars_;
+        
 };
 
 

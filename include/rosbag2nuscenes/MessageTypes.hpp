@@ -3,6 +3,8 @@
 
 #include <string>
 #include <vector>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 
 struct SensorMessageT {
     unsigned long timestamp;
@@ -14,7 +16,7 @@ struct RadarMessageT : SensorMessageT {
 };
 
 struct LidarMessageT : SensorMessageT {
-    //TODO
+    pcl::PointCloud<pcl::PointXYZI> cloud;
 };
 
 struct CameraMessageT : SensorMessageT {

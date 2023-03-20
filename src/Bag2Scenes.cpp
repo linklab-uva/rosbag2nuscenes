@@ -1,7 +1,20 @@
 #include "rosbag2nuscenes/Bag2Scenes.hpp"
 #include <iostream>
 
-Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) {
+Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) : 
+odometry_bar_{
+        indicators::option::BarWidth{80},
+        indicators::option::ForegroundColor{indicators::Color::white},
+        indicators::option::PrefixText{"Parsing Ego Odometry "},
+        indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}}
+},
+sensor_data_bar_{
+    indicators::option::BarWidth{80},
+    indicators::option::ForegroundColor{indicators::Color::white},
+    indicators::option::PrefixText{"Parsing Sensor Data  "},
+    indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}}
+},
+progress_bars_(sensor_data_bar_, odometry_bar_) {
     // Read Parameter File
     try {
         param_yaml_ = YAML::LoadFile(param_file);
@@ -57,9 +70,10 @@ Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) {
 void Bag2Scenes::writeScene() {
     MessageConverter message_converter;
     int total_msgs = 0;
-    if (!fs::exists("v1.0-mini")) {
-        fs::create_directories("v1.0-mini/samples");
-        fs::create_directory("v1.0-mini/sweeps");
+    if (!fs::exists("v1.0-mini/")) {
+        fs::create_directory("v1.0-mini");
+        fs::create_directory("samples");
+        fs::create_directory("sweeps");
     }
     writeLog();
     std::unordered_set<std::string> calibrated_sensors;
@@ -86,43 +100,7 @@ void Bag2Scenes::writeScene() {
     // Write sensor data
     std::thread sensor_data_thread(&Bag2Scenes::writeSampleData, this, std::ref(sample_data));
     unsigned long previous_sampled_timestamp = 0;
-    // for (int i = 0; i < total_msgs; i++) {
-    //     if (reader_.has_next()) {
-    //         auto serialized_message = reader_.read_next();
-    //         auto message_wrapper = std::make_shared<rosbag2_cpp::rosbag2_introspection_message_t>();
-    //         std::string msg_type = topic_to_type_[serialized_message->topic_name];
-    //         if (calibrated_sensors.size() == lidar_topics_.size() + radar_topics_.size() + camera_calibs_.size() && msg_type == "sensor_msgs/msg/CameraInfo") {
-    //             continue;
-    //         }
-    //         message_converter.getROSMsg(msg_type, message_wrapper);
-    //         auto library = rosbag2_cpp::get_typesupport_library(msg_type, "rosidl_typesupport_cpp");
-    //         auto type_support = rosbag2_cpp::get_typesupport_handle(msg_type, "rosidl_typesupport_cpp", library);
-    //         cdr_deserializer_->deserialize(serialized_message, type_support, message_wrapper);
-    //         if (msg_type ==  "delphi_esr_msgs/msg/EsrTrack") {
-    //             RadarMessageT radar_message = message_converter.getRadarMessage();
-    //             if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-    //                 writeCalibratedSensor(radar_message.frame_id, std::vector<std::vector<float>>());
-    //                 calibrated_sensors.insert({serialized_message->topic_name});
-    //             }
-    //         } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
-    //             CameraMessageT camera_message = message_converter.getCameraMessage();
-    //         } else if (msg_type == "sensor_msgs/msg/PointCloud2") {
-    //             LidarMessageT lidar_message = message_converter.getLidarMessage();
-    //             if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-    //                 writeCalibratedSensor(lidar_message.frame_id, std::vector<std::vector<float>>());
-    //                 calibrated_sensors.insert({serialized_message->topic_name});
-    //             }
-    //         } else if (msg_type == "nav_msgs/msg/Odometry") {
-                
-    //         } else if (msg_type == "sensor_msgs/msg/CameraInfo") {
-    //             CameraCalibrationT camera_calibration = message_converter.getCameraCalibration();
-    //             if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-    //                 writeCalibratedSensor(camera_calibration.frame_id, camera_calibration.intrinsic);
-    //                 calibrated_sensors.insert({serialized_message->topic_name});
-    //             }
-    //         }
-    //     }
-    // }
+    // TODO: sample stuff
     ego_pose_thread.join();
     std::ofstream ego_poses_out("v1.0-mini/ego_poses.json");
     ego_poses_out << std::setw(4) << ego_poses << std::endl;
@@ -189,8 +167,62 @@ std::string Bag2Scenes::writeSample() {
 void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
     int sensor_data_msgs = 0;
     for (rosbag2_storage::TopicInformation topic_data : bag_data_.topics_with_message_count) {
-        if (std::find(topics_of_interest_.begin(), topics_of_interest_.end(), itr->topic_metadata.name) != topics_of_interest_.end()) {
+        if (std::find(topics_of_interest_.begin(), topics_of_interest_.end(), topic_data.topic_metadata.name) != topics_of_interest_.end()) {
             sensor_data_msgs += topic_data.message_count;
+        }
+    }
+    sensor_data_bar_.set_option(indicators::option::MaxProgress{sensor_data_msgs});
+    rosbag2_cpp::readers::SequentialReader reader;
+    reader.open(storage_options_, converter_options_);
+    rosbag2_storage::StorageFilter storage_filter{};
+    storage_filter.topics = std::vector<std::string> {topics_of_interest_};
+    reader.set_filter(storage_filter);
+    rosbag2_cpp::SerializationFormatConverterFactory factory;
+    std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer = factory.load_deserializer("cdr");
+    MessageConverter message_converter;
+    SensorDataWriter data_writer;
+    std::unordered_set<std::string> calibrated_sensors;
+    for (int i = 0; i < sensor_data_msgs; i++) {
+        if (reader.has_next()) {
+            auto serialized_message = reader.read_next();
+            auto message_wrapper = std::make_shared<rosbag2_cpp::rosbag2_introspection_message_t>();
+            std::string msg_type = topic_to_type_[serialized_message->topic_name];
+            message_converter.getROSMsg(msg_type, message_wrapper);
+            auto library = rosbag2_cpp::get_typesupport_library(msg_type, "rosidl_typesupport_cpp");
+            auto type_support = rosbag2_cpp::get_typesupport_handle(msg_type, "rosidl_typesupport_cpp", library);
+            cdr_deserializer->deserialize(serialized_message, type_support, message_wrapper);
+            if (calibrated_sensors.size() == lidar_topics_.size() + radar_topics_.size() + camera_calibs_.size() && msg_type == "sensor_msgs/msg/CameraInfo") {
+                continue;
+            }
+            if (msg_type ==  "delphi_esr_msgs/msg/EsrTrack") {
+                RadarMessageT radar_message = message_converter.getRadarMessage();
+                if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
+                    writeCalibratedSensor(radar_message.frame_id, std::vector<std::vector<float>>());
+                    calibrated_sensors.insert({serialized_message->topic_name});
+                }
+                data_writer.writeRadarData(radar_message, "");
+                
+            } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
+                CameraMessageT camera_message = message_converter.getCameraMessage();
+                data_writer.writeCameraData(camera_message, "");
+            } else if (msg_type == "sensor_msgs/msg/PointCloud2") {
+                LidarMessageT lidar_message = message_converter.getLidarMessage();
+                if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
+                    writeCalibratedSensor(lidar_message.frame_id, std::vector<std::vector<float>>());
+                    calibrated_sensors.insert({serialized_message->topic_name});
+                }
+                data_writer.writeLidarData(lidar_message, getFilename(lidar_message.frame_id, 1, lidar_message.timestamp));
+            } else if (msg_type == "sensor_msgs/msg/CameraInfo") {
+                CameraCalibrationT camera_calibration = message_converter.getCameraCalibration();
+                if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
+                    writeCalibratedSensor(camera_calibration.frame_id, camera_calibration.intrinsic);
+                    calibrated_sensors.insert({serialized_message->topic_name});
+                }
+            }
+            sensor_data_bar_.set_option(indicators::option::PostfixText{
+                std::to_string(i) + "/" + std::to_string(sensor_data_msgs)
+            });
+            progress_bars_.tick<0>();
         }
     }
 }
@@ -203,13 +235,7 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
             odometry_msgs = topic_data.message_count;
         }
     }
-    indicators::BlockProgressBar bar{
-        indicators::option::BarWidth{80},
-        indicators::option::ForegroundColor{indicators::Color::white},
-        indicators::option::FontStyles{
-            std::vector<indicators::FontStyle>{indicators::FontStyle::bold}},
-        indicators::option::MaxProgress{odometry_msgs}
-    };
+    odometry_bar_.set_option(indicators::option::MaxProgress{odometry_msgs});
     rosbag2_cpp::readers::SequentialReader reader;
     reader.open(storage_options_, converter_options_);
     rosbag2_storage::StorageFilter storage_filter{};
@@ -234,11 +260,11 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
             new_pose["rotation"] = odometry_message.orientation;
             new_pose["translation"] = odometry_message.position;
             previous_poses.push_back(new_pose);
-            bar.set_option(indicators::option::PostfixText{
-                std::to_string(i) + "/" + std::to_string(odometry_msgs)
-            });
-            bar.tick();
         }
+        odometry_bar_.set_option(indicators::option::PostfixText{
+            std::to_string(i) + "/" + std::to_string(odometry_msgs)
+        });
+        progress_bars_.tick<1>();
     }
     std::cout << std::endl;
 }
@@ -300,8 +326,8 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         sensor["modality"] = modality;
         std::string directory = frame_info_[channel]["name"].as<std::string>();
         std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
-        fs::create_directory(fs::path("v1.0-mini/samples") / directory);
-        fs::create_directory(fs::path("v1.0-mini/sweeps") / directory);
+        fs::create_directory(fs::path("samples") / directory);
+        fs::create_directory(fs::path("sweeps") / directory);
         sensors.push_back(sensor);
         std::ofstream sensor_out("v1.0-mini/sensor.json");
         sensor_out << std::setw(4) << sensors << std::endl;
@@ -321,8 +347,8 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         sensor["modality"] = modality;
         std::string directory = frame_info_[channel]["name"].as<std::string>();
         std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
-        fs::create_directory(fs::path("v1.0-mini/samples") / directory);
-        fs::create_directory(fs::path("v1.0-mini/sweeps") / directory);
+        fs::create_directory(fs::path("samples") / directory);
+        fs::create_directory(fs::path("sweeps") / directory);
         sensors.push_back(sensor);
         std::ofstream sensor_out("v1.0-mini/sensor.json");
         sensor_out << std::setw(4) << sensors << std::endl;
@@ -346,4 +372,23 @@ std::vector<float> Bag2Scenes::splitString(std::string str) {
         v.push_back(std::stof(s));
     }
     return v;
+}
+
+fs::path Bag2Scenes::getFilename(std::string channel, bool is_key_frame, unsigned long timestamp) {
+    std::string directory = frame_info_[channel]["name"].as<std::string>();
+    std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
+    std::unique_ptr<char[]> buf;
+    size_t size;
+    if (is_key_frame) {
+        int size_s = std::snprintf( nullptr, 0, "samples/%s/%s__%s__%lu.pcd.bin", directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp) + 1; // Terminate with '\0'
+        size = static_cast<size_t>( size_s );
+        buf = std::unique_ptr<char[]>( new char[ size ] );
+        std::snprintf( buf.get(), size, "samples/%s/%s__%s__%lu.pcd.bin", directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp);
+    } else {
+        int size_s = std::snprintf( nullptr, 0, "sweeps/%s/%s__%s__%lu.pcd.bin", directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp) + 1;
+        size = static_cast<size_t>( size_s );
+        buf = std::unique_ptr<char[]>( new char[ size ] );
+        std::snprintf( buf.get(), size, "sweeps/%s/%s__%s__%lu.pcd.bin", directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp);
+    }
+    return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
 }

@@ -2,21 +2,23 @@
 #define SENSOR_DATA_WRITER_HPP
 
 #include "MessageTypes.hpp"
+#include <filesystem>
+#include <pcl/io/pcd_io.h>
+
+namespace fs = std::filesystem;
 
 class SensorDataWriter {
     public:
         SensorDataWriter();
 
-        void writeRadarData(RadarMessageT msg);
+        void writeRadarData(RadarMessageT msg, fs::path filename);
 
-        void writeLidarData(LidarMessageT msg);
+        void writeLidarData(LidarMessageT msg, fs::path filename);
 
-        void writeCameraData(CameraMessageT msg);
-
+        void writeCameraData(CameraMessageT msg, fs::path filename);
+    
     private:
-        void saveSensorData(void);
-
-        // TODO: thread pool stuff
+        pcl::PCDWriter lidar_writer_;
 };
 
 

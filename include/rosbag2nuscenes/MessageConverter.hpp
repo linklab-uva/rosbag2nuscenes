@@ -8,6 +8,7 @@
 #include "sensor_msgs/msg/compressed_image.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include <pcl_conversions/pcl_conversions.h>
 #include <rosbag2_cpp/converter_interfaces/serialization_format_converter.hpp>
 
 
