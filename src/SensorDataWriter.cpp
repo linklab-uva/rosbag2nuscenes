@@ -5,7 +5,10 @@ SensorDataWriter::SensorDataWriter() {
 }
 
 void SensorDataWriter::writeRadarData(RadarMessageT msg, fs::path filename) {
-
+    pcl::PointCloud<RadarPointT> radar_cloud;
+    for (RadarPointT point : msg.points)
+        radar_cloud.points.push_back(point);
+    pcl::io::savePCDFileBinary(filename, radar_cloud);
 }
 
 void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {

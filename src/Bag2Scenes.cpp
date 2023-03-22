@@ -200,7 +200,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                     writeCalibratedSensor(radar_message.frame_id, std::vector<std::vector<float>>());
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
-                data_writer.writeRadarData(radar_message, "");
+                data_writer.writeRadarData(radar_message, getFilename(radar_message.frame_id, 1, radar_message.timestamp));
                 
             } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
                 CameraMessageT camera_message = message_converter.getCameraMessage();

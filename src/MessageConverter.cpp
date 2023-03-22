@@ -6,8 +6,22 @@ MessageConverter::MessageConverter() {
 }
 
 RadarMessageT MessageConverter::getRadarMessage() {
-    RadarMessageT radar_msg;
-    radar_msg.frame_id = radar_ros_msg_.header.frame_id;
+    std::stringstream ss;
+    ss << radar_ros_msg_.header.stamp.sec << "." << radar_ros_msg_.header.stamp.nanosec;
+    RadarPointT radar_point { (float) (radar_ros_msg_.track_range * cos(radar_ros_msg_.track_angle * 3.14159/180)),
+                    (float) (radar_ros_msg_.track_range * sin(radar_ros_msg_.track_angle * 3.14159/180)),
+                    0.0,
+                    0, // TODO dyn_prop
+                    radar_ros_msg_.track_id,
+                    radar_ros_msg_.track_width,
+                    0.0, // TODO vx
+                    0.0, // TODO vy
+                    radar_ros_msg_.track_range_rate,
+                    radar_ros_msg_.track_lat_rate,
+                    1,
+                    3, // TODO ambig_state
+                    0, 0, 0, 1, 0, 0} ;
+    RadarMessageT radar_msg {{ stoul(ss.str()), radar_ros_msg_.header.frame_id }, std::vector<RadarPointT> {radar_point}};
     return radar_msg;
 }
 
@@ -25,7 +39,7 @@ CameraMessageT MessageConverter::getCameraMessage() {
     CameraMessageT camera_msg;
     camera_msg.frame_id = camera_ros_msg_.header.frame_id;
     std::stringstream ss;
-    ss << lidar_ros_msg_.header.stamp.sec << "." << lidar_ros_msg_.header.stamp.nanosec;
+    ss << camera_ros_msg_.header.stamp.sec << "." << camera_ros_msg_.header.stamp.nanosec;
     camera_msg.timestamp = stoi(ss.str());
     camera_msg.image = cv_bridge::toCvCopy(camera_ros_msg_, "rgb8")->image;
     return camera_msg;
