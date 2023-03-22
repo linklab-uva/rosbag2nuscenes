@@ -75,4 +75,5 @@ void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {
 }
 
 void SensorDataWriter::writeCameraData(CameraMessageT msg, fs::path filename) {
+    cv::imwrite(filename, msg.image);
 }

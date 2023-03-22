@@ -5,6 +5,7 @@
 #include <vector>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <opencv2/opencv.hpp>
 
 struct SensorMessageT {
     unsigned long timestamp;
@@ -20,7 +21,7 @@ struct LidarMessageT : SensorMessageT {
 };
 
 struct CameraMessageT : SensorMessageT {
-    //TODO
+    cv::Mat image;
 };
 
 struct OdometryMessageT {

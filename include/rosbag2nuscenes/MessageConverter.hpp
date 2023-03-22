@@ -10,6 +10,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include <pcl_conversions/pcl_conversions.h>
 #include <rosbag2_cpp/converter_interfaces/serialization_format_converter.hpp>
+#include <cv_bridge/cv_bridge.h>
 
 
 

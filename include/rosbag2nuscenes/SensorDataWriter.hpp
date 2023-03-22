@@ -4,6 +4,7 @@
 #include "MessageTypes.hpp"
 #include <filesystem>
 #include <pcl/io/pcd_io.h>
+#include <opencv2/imgcodecs.hpp>
 
 namespace fs = std::filesystem;
 
@@ -18,7 +19,6 @@ class SensorDataWriter {
         void writeCameraData(CameraMessageT msg, fs::path filename);
     
     private:
-        pcl::PCDWriter lidar_writer_;
 };
 
 

@@ -204,7 +204,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 
             } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
                 CameraMessageT camera_message = message_converter.getCameraMessage();
-                data_writer.writeCameraData(camera_message, "");
+                data_writer.writeCameraData(camera_message, getFilename(camera_message.frame_id, 1, camera_message.timestamp));
             } else if (msg_type == "sensor_msgs/msg/PointCloud2") {
                 LidarMessageT lidar_message = message_converter.getLidarMessage();
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
@@ -376,19 +376,27 @@ std::vector<float> Bag2Scenes::splitString(std::string str) {
 
 fs::path Bag2Scenes::getFilename(std::string channel, bool is_key_frame, unsigned long timestamp) {
     std::string directory = frame_info_[channel]["name"].as<std::string>();
+    std::string modality = channel.substr(0, channel.find("_"));
     std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
     std::unique_ptr<char[]> buf;
     size_t size;
-    if (is_key_frame) {
-        int size_s = std::snprintf( nullptr, 0, "samples/%s/%s__%s__%lu.pcd.bin", directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp) + 1; // Terminate with '\0'
-        size = static_cast<size_t>( size_s );
-        buf = std::unique_ptr<char[]>( new char[ size ] );
-        std::snprintf( buf.get(), size, "samples/%s/%s__%s__%lu.pcd.bin", directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp);
-    } else {
-        int size_s = std::snprintf( nullptr, 0, "sweeps/%s/%s__%s__%lu.pcd.bin", directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp) + 1;
-        size = static_cast<size_t>( size_s );
-        buf = std::unique_ptr<char[]>( new char[ size ] );
-        std::snprintf( buf.get(), size, "sweeps/%s/%s__%s__%lu.pcd.bin", directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp);
+    std::string extension;
+    std::string base_dir;
+    if (modality == "lidar") {
+        extension = ".pcd.bin";
+    } else if (modality == "camera") {
+        extension = ".jpg";
+    } else if (modality == "radar") {
+        extension = ".pcd";
     }
+    if (is_key_frame) {
+        base_dir = "samples";
+    } else {
+        base_dir = "sweeps";
+    }
+    int size_s = std::snprintf( nullptr, 0, "%s/%s/%s__%s__%lu%s", base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str()) + 1; // Terminate with '\0'
+    size = static_cast<size_t>( size_s );
+    buf = std::unique_ptr<char[]>( new char[ size ] );
+    std::snprintf( buf.get(), size, "%s/%s/%s__%s__%lu%s", base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str());
     return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
 }

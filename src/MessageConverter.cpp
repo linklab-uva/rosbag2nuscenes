@@ -23,6 +23,11 @@ LidarMessageT MessageConverter::getLidarMessage() {
 
 CameraMessageT MessageConverter::getCameraMessage() {
     CameraMessageT camera_msg;
+    camera_msg.frame_id = camera_ros_msg_.header.frame_id;
+    std::stringstream ss;
+    ss << lidar_ros_msg_.header.stamp.sec << "." << lidar_ros_msg_.header.stamp.nanosec;
+    camera_msg.timestamp = stoi(ss.str());
+    camera_msg.image = cv_bridge::toCvCopy(camera_ros_msg_, "rgb8")->image;
     return camera_msg;
 }
 
