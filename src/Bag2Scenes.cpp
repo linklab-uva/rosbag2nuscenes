@@ -42,9 +42,12 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     }
     for (YAML::Node::iterator itr = param_yaml_["SENSOR_INFO"].begin(); itr != param_yaml_["SENSOR_INFO"].end(); itr++) {
         std::string sensor_name = itr->first.as<std::string>();
+        frame_info_[itr->second["FRAME"].as<std::string>()]["previous_timestamp"] = 0;
+        frame_info_[itr->second["FRAME"].as<std::string>()]["previous_token"] = "";
+        frame_info_[itr->second["FRAME"].as<std::string>()]["next_token"] = generateToken();
+        frame_info_[itr->second["FRAME"].as<std::string>()]["name"] = sensor_name;
         std::string modality = sensor_name.substr(0, sensor_name.find("_"));
         std::string topic = itr->second["TOPIC"].as<std::string>();
-        frame_info_[itr->second["FRAME"].as<std::string>()]["name"] = sensor_name;
         if (topic != "null") {
             topics_of_interest_.push_back(topic);
             if (modality == "LIDAR") {
@@ -65,10 +68,15 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     bag_dir_ = rosbag_dir.parent_path().filename();
     srand(time(0));
     indicators::show_console_cursor(false);
+    previous_sampled_timestamp_ = 0;
+    previous_sample_token_ = "";
+    next_sample_token_ = generateToken();
+    nbr_samples_ = 0;
 }
 
 void Bag2Scenes::writeScene() {
     MessageConverter message_converter;
+    scene_token_ = generateToken();
     int total_msgs = 0;
     if (!fs::exists("v1.0-mini/")) {
         fs::create_directory("v1.0-mini");
@@ -102,8 +110,11 @@ void Bag2Scenes::writeScene() {
     unsigned long previous_sampled_timestamp = 0;
     // TODO: sample stuff
     ego_pose_thread.join();
+    sensor_data_thread.join();
     std::ofstream ego_poses_out("v1.0-mini/ego_poses.json");
     ego_poses_out << std::setw(4) << ego_poses << std::endl;
+    std::ofstream sample_data_out("v1.0-mini/sample_data.json");
+    sample_data_out << std::setw(4) << sample_data << std::endl;
     indicators::show_console_cursor(true);
     std::cout << "Done." << std::endl;
 }
@@ -182,6 +193,8 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
     MessageConverter message_converter;
     SensorDataWriter data_writer;
     std::unordered_set<std::string> calibrated_sensors;
+    fs::path filename;
+    std::string filename_str;
     for (int i = 0; i < sensor_data_msgs; i++) {
         if (reader.has_next()) {
             auto serialized_message = reader.read_next();
@@ -194,31 +207,71 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             if (calibrated_sensors.size() == lidar_topics_.size() + radar_topics_.size() + camera_calibs_.size() && msg_type == "sensor_msgs/msg/CameraInfo") {
                 continue;
             }
+            nlohmann::json sample_data;
             if (msg_type ==  "delphi_esr_msgs/msg/EsrTrack") {
                 RadarMessageT radar_message = message_converter.getRadarMessage();
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
                     writeCalibratedSensor(radar_message.frame_id, std::vector<std::vector<float>>());
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
-                data_writer.writeRadarData(radar_message, getFilename(radar_message.frame_id, 1, radar_message.timestamp));
-                
+                filename = getFilename(radar_message.frame_id, radar_message.timestamp);
+                data_writer.writeRadarData(radar_message, filename);
+                sample_data["token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[radar_message.frame_id]["token"].as<std::string>();
+                sample_data["ego_pose_token"] = ""; // TODO
+                sample_data["height"] = 0;
+                sample_data["width"] = 0;
+                sample_data["timestamp"] = radar_message.timestamp;
+                sample_data["prev"] = frame_info_[radar_message.frame_id]["previous_token"].as<std::string>();
+                frame_info_[radar_message.frame_id]["previous_token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
+                frame_info_[radar_message.frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
             } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
                 CameraMessageT camera_message = message_converter.getCameraMessage();
-                data_writer.writeCameraData(camera_message, getFilename(camera_message.frame_id, 1, camera_message.timestamp));
+                filename = getFilename(camera_message.frame_id, camera_message.timestamp);
+                data_writer.writeCameraData(camera_message, filename);
+                sample_data["token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[camera_message.frame_id]["token"].as<std::string>();
+                sample_data["ego_pose_token"] = ""; // TODO
+                sample_data["height"] = camera_message.image.rows;
+                sample_data["width"] = camera_message.image.cols;
+                sample_data["timestamp"] = camera_message.timestamp;
+                sample_data["prev"] = frame_info_[camera_message.frame_id]["previous_token"].as<std::string>();
+                frame_info_[camera_message.frame_id]["previous_token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
+                frame_info_[camera_message.frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
             } else if (msg_type == "sensor_msgs/msg/PointCloud2") {
                 LidarMessageT lidar_message = message_converter.getLidarMessage();
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
                     writeCalibratedSensor(lidar_message.frame_id, std::vector<std::vector<float>>());
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
-                data_writer.writeLidarData(lidar_message, getFilename(lidar_message.frame_id, 1, lidar_message.timestamp));
+                filename = getFilename(lidar_message.frame_id, lidar_message.timestamp);
+                data_writer.writeLidarData(lidar_message, filename);
+                sample_data["token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[lidar_message.frame_id]["token"].as<std::string>();
+                sample_data["ego_pose_token"] = ""; // TODO
+                sample_data["height"] = 0;
+                sample_data["width"] = 0;
+                sample_data["timestamp"] = lidar_message.timestamp;
+                sample_data["prev"] = frame_info_[lidar_message.frame_id]["previous_token"].as<std::string>();
+                frame_info_[lidar_message.frame_id]["previous_token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
+                frame_info_[lidar_message.frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
             } else if (msg_type == "sensor_msgs/msg/CameraInfo") {
                 CameraCalibrationT camera_calibration = message_converter.getCameraCalibration();
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
                     writeCalibratedSensor(camera_calibration.frame_id, camera_calibration.intrinsic);
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
+                continue;
             }
+            sample_data["sample_token"] = current_sample_token_;
+            filename_str = filename.u8string();
+            sample_data["filename"] = filename_str;
+            sample_data["fileformat"] = filename_str.substr(filename_str.find('.'));
+            sample_data["is_key_frame"] = (int) (filename_str.find("samples") != std::string::npos);
+            previous_data.push_back(sample_data);
             sensor_data_bar_.set_option(indicators::option::PostfixText{
                 std::to_string(i) + "/" + std::to_string(sensor_data_msgs)
             });
@@ -374,7 +427,7 @@ std::vector<float> Bag2Scenes::splitString(std::string str) {
     return v;
 }
 
-fs::path Bag2Scenes::getFilename(std::string channel, bool is_key_frame, unsigned long timestamp) {
+fs::path Bag2Scenes::getFilename(std::string channel, unsigned long timestamp) {
     std::string directory = frame_info_[channel]["name"].as<std::string>();
     std::string modality = channel.substr(0, channel.find("_"));
     std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
@@ -389,7 +442,7 @@ fs::path Bag2Scenes::getFilename(std::string channel, bool is_key_frame, unsigne
     } else if (modality == "radar") {
         extension = ".pcd";
     }
-    if (is_key_frame) {
+    if (is_key_frame(channel, timestamp)) {
         base_dir = "samples";
     } else {
         base_dir = "sweeps";
@@ -399,4 +452,32 @@ fs::path Bag2Scenes::getFilename(std::string channel, bool is_key_frame, unsigne
     buf = std::unique_ptr<char[]>( new char[ size ] );
     std::snprintf( buf.get(), size, "%s/%s/%s__%s__%lu%s", base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str());
     return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
+}
+
+bool Bag2Scenes::is_key_frame(std::string channel, unsigned long timestamp) {
+    timestamp_mutex_.lock();
+    if (previous_sampled_timestamp_ == 0 || timestamp - previous_sampled_timestamp_ > 5 * pow(10, 8)) {
+        previous_sampled_timestamp_ += 5 * pow(10, 8);
+        nbr_samples_++;
+        nlohmann::json sample;
+        current_sample_token_ = next_sample_token_;
+        sample["token"] = current_sample_token_;
+        sample["timestamp"] = previous_sampled_timestamp_;
+        sample["scene_token"] = scene_token_;
+        sample["prev"] = previous_sample_token_;
+        previous_sample_token_ = next_sample_token_;
+        next_sample_token_ = generateToken();
+        sample["next"] = next_sample_token_;
+        samples_.push_back(sample);
+        sensors_sampled_.clear();
+        sensors_sampled_.insert({channel});
+        timestamp_mutex_.unlock();
+        return true;
+    } else if (sensors_sampled_.find(channel) == sensors_sampled_.end()) {
+        sensors_sampled_.insert({channel});
+        timestamp_mutex_.unlock();
+        return true;
+    }
+    timestamp_mutex_.unlock();
+    return false;
 }

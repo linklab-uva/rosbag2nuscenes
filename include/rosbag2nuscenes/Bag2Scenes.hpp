@@ -30,6 +30,7 @@
 #include <indicators/block_progress_bar.hpp>
 #include <indicators/multi_progress.hpp>
 #include <thread>
+#include <mutex>
 
 namespace fs = std::filesystem;
 
@@ -45,17 +46,14 @@ class Bag2Scenes {
 
         std::vector<float> splitString(std::string str);
 
-        fs::path getFilename(std::string channel, bool is_key_frame, unsigned long timestamp);
+        bool is_key_frame(std::string channel, unsigned long timestamp);
+
+        fs::path getFilename(std::string channel, unsigned long timestamp);
         
         void writeLog();
 
         void writeMap(std::string log_token);
 
-        /**
-         * @brief 
-         * 
-         * @return std::string Token of sample
-         */
         std::string writeSample();
 
         void writeSampleData(nlohmann::json& previous_data);
@@ -77,6 +75,16 @@ class Bag2Scenes {
         std::vector<std::string> camera_calibs_;
         std::vector<std::string> topics_of_interest_;
         std::map<std::string, std::string> topic_to_type_;
+        std::map<std::string, unsigned long> last_timestamp_received_;
+        unsigned long previous_sampled_timestamp_;
+        std::unordered_set<std::string> sensors_sampled_;
+        int nbr_samples_;
+        nlohmann::json samples_;
+        std::string previous_sample_token_;
+        std::string next_sample_token_;
+        std::string current_sample_token_;
+        std::string scene_token_;
+        std::mutex timestamp_mutex_;
         YAML::Node frame_info_;
         YAML::Node param_yaml_;
         indicators::BlockProgressBar odometry_bar_;
