@@ -46,6 +46,7 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
         frame_info_[itr->second["FRAME"].as<std::string>()]["previous_token"] = "";
         frame_info_[itr->second["FRAME"].as<std::string>()]["next_token"] = generateToken();
         frame_info_[itr->second["FRAME"].as<std::string>()]["name"] = sensor_name;
+        frame_info_[itr->second["FRAME"].as<std::string>()]["sensor_token"] = generateToken();
         std::string modality = sensor_name.substr(0, sensor_name.find("_"));
         std::string topic = itr->second["TOPIC"].as<std::string>();
         if (topic != "null") {
@@ -217,7 +218,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 filename = getFilename(radar_message.frame_id, radar_message.timestamp);
                 data_writer.writeRadarData(radar_message, filename);
                 sample_data["token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[radar_message.frame_id]["token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[radar_message.frame_id]["sensor_token"].as<std::string>();
                 sample_data["ego_pose_token"] = ""; // TODO
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
@@ -231,7 +232,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 filename = getFilename(camera_message.frame_id, camera_message.timestamp);
                 data_writer.writeCameraData(camera_message, filename);
                 sample_data["token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[camera_message.frame_id]["token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[camera_message.frame_id]["sensor_token"].as<std::string>();
                 sample_data["ego_pose_token"] = ""; // TODO
                 sample_data["height"] = camera_message.image.rows;
                 sample_data["width"] = camera_message.image.cols;
@@ -249,7 +250,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 filename = getFilename(lidar_message.frame_id, lidar_message.timestamp);
                 data_writer.writeLidarData(lidar_message, filename);
                 sample_data["token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[lidar_message.frame_id]["token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[lidar_message.frame_id]["sensor_token"].as<std::string>();
                 sample_data["ego_pose_token"] = ""; // TODO
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
@@ -342,8 +343,7 @@ void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::ve
             std::string translation = joint.child("origin").attribute("xyz").value();
             std::string rotation = joint.child("origin").attribute("rpy").value();            
             nlohmann::json calibrated_sensor;
-            frame_info_[channel]["token"] = generateToken();
-            calibrated_sensor["token"] = frame_info_[channel]["token"].as<std::string>();
+            calibrated_sensor["token"] = frame_info_[channel]["sensor_token"].as<std::string>();
             calibrated_sensor["sensor_token"] = writeSensor(channel);
             calibrated_sensor["translation"] = splitString(translation);
             std::vector<float> euler_angles = splitString(rotation);
@@ -429,8 +429,8 @@ std::vector<float> Bag2Scenes::splitString(std::string str) {
 
 fs::path Bag2Scenes::getFilename(std::string channel, unsigned long timestamp) {
     std::string directory = frame_info_[channel]["name"].as<std::string>();
-    std::string modality = channel.substr(0, channel.find("_"));
-    std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
+    std::string modality = directory.substr(0, directory.find("_"));
+    std::transform(modality.begin(), modality.end(), modality.begin(), ::tolower);
     std::unique_ptr<char[]> buf;
     size_t size;
     std::string extension;
