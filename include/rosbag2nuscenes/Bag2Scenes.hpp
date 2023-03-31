@@ -49,8 +49,10 @@ class Bag2Scenes {
         bool is_key_frame(std::string channel, unsigned long timestamp);
 
         fs::path getFilename(std::string channel, unsigned long timestamp);
+
+        std::string getClosestEgoPose(unsigned long timestamp);
         
-        void writeLog();
+        std::string writeLog();
 
         void writeMap(std::string log_token);
 
@@ -85,6 +87,7 @@ class Bag2Scenes {
         std::string current_sample_token_;
         std::string scene_token_;
         std::mutex timestamp_mutex_;
+        std::mutex ego_pose_mutex_;
         YAML::Node frame_info_;
         YAML::Node param_yaml_;
         indicators::BlockProgressBar odometry_bar_;

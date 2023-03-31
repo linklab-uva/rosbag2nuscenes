@@ -78,17 +78,20 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
 void Bag2Scenes::writeScene() {
     MessageConverter message_converter;
     scene_token_ = generateToken();
-    int total_msgs = 0;
     if (!fs::exists("v1.0-mini/")) {
         fs::create_directory("v1.0-mini");
         fs::create_directory("samples");
         fs::create_directory("sweeps");
     }
-    writeLog();
+    std::string log_token = writeLog();
+    nlohmann::json scene;
+    scene["token"] = scene_token_;
+    scene["log_token"] = log_token;
+    scene["first_sample_token"] = current_sample_token_;
     std::unordered_set<std::string> calibrated_sensors;
     nlohmann::json ego_poses;
-    nlohmann::json samples;
     nlohmann::json sample_data;
+    nlohmann::json scenes;
     if (fs::exists("v1.0-mini/ego_poses.json")) {
         std::ifstream ego_poses_in("v1.0-mini/ego_poses.json");
         ego_poses = nlohmann::json::parse(ego_poses_in);
@@ -96,7 +99,7 @@ void Bag2Scenes::writeScene() {
     }
     if (fs::exists("v1.0-mini/sample.json")) {
         std::ifstream sample_in("v1.0-mini/sample.json");
-        samples = nlohmann::json::parse(sample_in);
+        samples_ = nlohmann::json::parse(sample_in);
         sample_in.close();
     }
     if (fs::exists("v1.0-mini/sample_data.json")) {
@@ -104,23 +107,36 @@ void Bag2Scenes::writeScene() {
         sample_data = nlohmann::json::parse(sample_data_in);
         sample_data_in.close();
     }
+    if (fs::exists("v1.0-mini/scene.json")) {
+        std::ifstream scene_in("v1.0-mini/scene.json");
+        scenes = nlohmann::json::parse(scene_in);
+        scene_in.close();
+    }
     // Write odometry data
     std::thread ego_pose_thread(&Bag2Scenes::writeEgoPose, this, std::ref(ego_poses));
     // Write sensor data
     std::thread sensor_data_thread(&Bag2Scenes::writeSampleData, this, std::ref(sample_data));
-    unsigned long previous_sampled_timestamp = 0;
     // TODO: sample stuff
     ego_pose_thread.join();
     sensor_data_thread.join();
     std::ofstream ego_poses_out("v1.0-mini/ego_poses.json");
     ego_poses_out << std::setw(4) << ego_poses << std::endl;
+    ego_poses_out.close();
     std::ofstream sample_data_out("v1.0-mini/sample_data.json");
     sample_data_out << std::setw(4) << sample_data << std::endl;
+    sample_data_out.close();
+    std::ofstream sample_out("v1.0-mini/sample.json");
+    sample_out << std::setw(4) << samples_ << std::endl;
+    sample_out.close();
+    scene["nbr_samples"] = nbr_samples_;
+    scene["last_sample_token"] = current_sample_token_;
+    scene["name"] = bag_dir_;
+    scene["description"] = param_yaml_["BAG_INFO"]["DESCRIPTION"].as<std::string>();
     indicators::show_console_cursor(true);
     std::cout << "Done." << std::endl;
 }
 
-void Bag2Scenes::writeLog() {
+std::string Bag2Scenes::writeLog() {
     std::string log_token = generateToken();
     nlohmann::json logs;
     if (fs::exists("v1.0-mini/log.json")) {
@@ -141,6 +157,7 @@ void Bag2Scenes::writeLog() {
     std::ofstream log_out("v1.0-mini/log.json");
     log_out << std::setw(4) << logs << std::endl;
     writeMap(log_token);
+    return log_token;
 }
 
 void Bag2Scenes::writeMap(std::string log_token) {
@@ -205,6 +222,10 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             auto library = rosbag2_cpp::get_typesupport_library(msg_type, "rosidl_typesupport_cpp");
             auto type_support = rosbag2_cpp::get_typesupport_handle(msg_type, "rosidl_typesupport_cpp", library);
             cdr_deserializer->deserialize(serialized_message, type_support, message_wrapper);
+            sensor_data_bar_.set_option(indicators::option::PostfixText{
+                std::to_string(i+1) + "/" + std::to_string(sensor_data_msgs)
+            });
+            progress_bars_.tick<0>();
             if (calibrated_sensors.size() == lidar_topics_.size() + radar_topics_.size() + camera_calibs_.size() && msg_type == "sensor_msgs/msg/CameraInfo") {
                 continue;
             }
@@ -270,13 +291,9 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             sample_data["sample_token"] = current_sample_token_;
             filename_str = filename.u8string();
             sample_data["filename"] = filename_str;
-            sample_data["fileformat"] = filename_str.substr(filename_str.find('.'));
+            sample_data["fileformat"] = filename_str.substr(filename_str.find('.')+1);
             sample_data["is_key_frame"] = (int) (filename_str.find("samples") != std::string::npos);
             previous_data.push_back(sample_data);
-            sensor_data_bar_.set_option(indicators::option::PostfixText{
-                std::to_string(i) + "/" + std::to_string(sensor_data_msgs)
-            });
-            progress_bars_.tick<0>();
         }
     }
 }
@@ -316,11 +333,10 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
             previous_poses.push_back(new_pose);
         }
         odometry_bar_.set_option(indicators::option::PostfixText{
-            std::to_string(i) + "/" + std::to_string(odometry_msgs)
+            std::to_string(i+1) + "/" + std::to_string(odometry_msgs)
         });
         progress_bars_.tick<1>();
     }
-    std::cout << std::endl;
 }
 
 void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::vector<float>> camera_intrinsic) {
@@ -480,4 +496,8 @@ bool Bag2Scenes::is_key_frame(std::string channel, unsigned long timestamp) {
     }
     timestamp_mutex_.unlock();
     return false;
+}
+
+std::string getClosestEgoPose(unsigned long timestamp) {
+
 }
