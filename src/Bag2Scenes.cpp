@@ -73,6 +73,7 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     previous_sample_token_ = "";
     next_sample_token_ = generateToken();
     nbr_samples_ = 0;
+    waiting_timestamp_ = 0;
 }
 
 void Bag2Scenes::writeScene() {
@@ -87,7 +88,7 @@ void Bag2Scenes::writeScene() {
     nlohmann::json scene;
     scene["token"] = scene_token_;
     scene["log_token"] = log_token;
-    scene["first_sample_token"] = current_sample_token_;
+    scene["first_sample_token"] = next_sample_token_;
     std::unordered_set<std::string> calibrated_sensors;
     nlohmann::json ego_poses;
     nlohmann::json sample_data;
@@ -116,7 +117,6 @@ void Bag2Scenes::writeScene() {
     std::thread ego_pose_thread(&Bag2Scenes::writeEgoPose, this, std::ref(ego_poses));
     // Write sensor data
     std::thread sensor_data_thread(&Bag2Scenes::writeSampleData, this, std::ref(sample_data));
-    // TODO: sample stuff
     ego_pose_thread.join();
     sensor_data_thread.join();
     std::ofstream ego_poses_out("v1.0-mini/ego_poses.json");
@@ -132,6 +132,10 @@ void Bag2Scenes::writeScene() {
     scene["last_sample_token"] = current_sample_token_;
     scene["name"] = bag_dir_;
     scene["description"] = param_yaml_["BAG_INFO"]["DESCRIPTION"].as<std::string>();
+    scenes.push_back(scene);
+    std::ofstream scene_out("v1.0-mini/scene.json");
+    scene_out << std::setw(4) << scenes << std::endl;
+    scene_out.close();
     indicators::show_console_cursor(true);
     std::cout << "Done." << std::endl;
 }
@@ -240,7 +244,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 data_writer.writeRadarData(radar_message, filename);
                 sample_data["token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
                 sample_data["calibrated_sensor_token"] = frame_info_[radar_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = ""; // TODO
+                sample_data["ego_pose_token"] = getClosestEgoPose(radar_message.timestamp);
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
                 sample_data["timestamp"] = radar_message.timestamp;
@@ -254,7 +258,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 data_writer.writeCameraData(camera_message, filename);
                 sample_data["token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
                 sample_data["calibrated_sensor_token"] = frame_info_[camera_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = ""; // TODO
+                sample_data["ego_pose_token"] = getClosestEgoPose(camera_message.timestamp);
                 sample_data["height"] = camera_message.image.rows;
                 sample_data["width"] = camera_message.image.cols;
                 sample_data["timestamp"] = camera_message.timestamp;
@@ -272,7 +276,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 data_writer.writeLidarData(lidar_message, filename);
                 sample_data["token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
                 sample_data["calibrated_sensor_token"] = frame_info_[lidar_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = ""; // TODO
+                sample_data["ego_pose_token"] = getClosestEgoPose(lidar_message.timestamp);
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
                 sample_data["timestamp"] = lidar_message.timestamp;
@@ -331,6 +335,12 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
             new_pose["rotation"] = odometry_message.orientation;
             new_pose["translation"] = odometry_message.position;
             previous_poses.push_back(new_pose);
+            std::unique_lock<std::mutex> lck(ego_pose_mutex_);
+            ego_pose_queue_.push_back(std::pair {new_pose["timestamp"], new_pose["token"]});
+            if (waiting_timestamp_ && odometry_message.timestamp > waiting_timestamp_) {
+                waiting_timestamp_ = 0;
+                ego_pose_ready_.notify_all();
+            }
         }
         odometry_bar_.set_option(indicators::option::PostfixText{
             std::to_string(i+1) + "/" + std::to_string(odometry_msgs)
@@ -498,6 +508,31 @@ bool Bag2Scenes::is_key_frame(std::string channel, unsigned long timestamp) {
     return false;
 }
 
-std::string getClosestEgoPose(unsigned long timestamp) {
-
+std::string Bag2Scenes::getClosestEgoPose(unsigned long timestamp) {
+    std::unique_lock<std::mutex> lck(ego_pose_mutex_);
+    while (ego_pose_queue_.size() == 0) {
+        waiting_timestamp_ = timestamp;
+        ego_pose_ready_.wait(lck);
+    }
+    while (std::get<0>(ego_pose_queue_.back()) < timestamp) {
+        waiting_timestamp_ = timestamp;
+        ego_pose_ready_.wait(lck);
+    }
+    std::string previous_token;
+    unsigned long previous_time_difference;
+    for (int i = 0; i < ego_pose_queue_.size(); i++) {
+        if (std::get<0>(ego_pose_queue_[i]) >= timestamp) {
+            std::string return_token;
+            if (std::get<0>(ego_pose_queue_[i]) - timestamp < previous_time_difference) {
+                return_token = std::get<1>(ego_pose_queue_[i]);
+            } else {
+                return_token = previous_token;
+            }
+            ego_pose_queue_.erase(ego_pose_queue_.cbegin(), ego_pose_queue_.cbegin() + i);
+            ego_pose_mutex_.unlock();
+            return return_token;
+        }
+        previous_time_difference = timestamp - std::get<0>(ego_pose_queue_[i]);
+        previous_token = std::get<1>(ego_pose_queue_[i]);
+    }
 }

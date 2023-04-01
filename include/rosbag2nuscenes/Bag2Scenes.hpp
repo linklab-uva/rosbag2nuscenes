@@ -31,6 +31,7 @@
 #include <indicators/multi_progress.hpp>
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 
 namespace fs = std::filesystem;
 
@@ -76,6 +77,7 @@ class Bag2Scenes {
         std::vector<std::string> camera_topics_;
         std::vector<std::string> camera_calibs_;
         std::vector<std::string> topics_of_interest_;
+        std::vector<std::pair<unsigned long, std::string>> ego_pose_queue_;
         std::map<std::string, std::string> topic_to_type_;
         std::map<std::string, unsigned long> last_timestamp_received_;
         unsigned long previous_sampled_timestamp_;
@@ -88,6 +90,8 @@ class Bag2Scenes {
         std::string scene_token_;
         std::mutex timestamp_mutex_;
         std::mutex ego_pose_mutex_;
+        std::condition_variable ego_pose_ready_;
+        unsigned long waiting_timestamp_;
         YAML::Node frame_info_;
         YAML::Node param_yaml_;
         indicators::BlockProgressBar odometry_bar_;
