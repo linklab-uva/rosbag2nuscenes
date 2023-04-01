@@ -88,7 +88,6 @@ class Bag2Scenes {
         std::string next_sample_token_;
         std::string current_sample_token_;
         std::string scene_token_;
-        std::mutex timestamp_mutex_;
         std::mutex ego_pose_mutex_;
         std::condition_variable ego_pose_ready_;
         unsigned long waiting_timestamp_;

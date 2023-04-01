@@ -1,25 +1,23 @@
 #include "rosbag2nuscenes/MessageConverter.hpp"
 
 
-MessageConverter::MessageConverter() {
-
-}
+MessageConverter::MessageConverter() {}
 
 RadarMessageT MessageConverter::getRadarMessage() {
     std::stringstream ss;
-    ss << radar_ros_msg_.header.stamp.sec << "." << radar_ros_msg_.header.stamp.nanosec;
+    ss << radar_ros_msg_.header.stamp.sec << radar_ros_msg_.header.stamp.nanosec;
     RadarPointT radar_point { (float) (radar_ros_msg_.track_range * cos(radar_ros_msg_.track_angle * 3.14159/180)),
                     (float) (radar_ros_msg_.track_range * sin(radar_ros_msg_.track_angle * 3.14159/180)),
                     0.0,
-                    0, // TODO dyn_prop
+                    4,
                     radar_ros_msg_.track_id,
                     radar_ros_msg_.track_width,
-                    0.0, // TODO vx
-                    0.0, // TODO vy
+                    radar_ros_msg_.track_range_rate,
+                    radar_ros_msg_.track_lat_rate,
                     radar_ros_msg_.track_range_rate,
                     radar_ros_msg_.track_lat_rate,
                     1,
-                    3, // TODO ambig_state
+                    3,
                     0, 0, 0, 1, 0, 0} ;
     RadarMessageT radar_msg {{ stoul(ss.str()), radar_ros_msg_.header.frame_id }, std::vector<RadarPointT> {radar_point}};
     return radar_msg;
@@ -29,8 +27,8 @@ LidarMessageT MessageConverter::getLidarMessage() {
     LidarMessageT lidar_msg;
     lidar_msg.frame_id = lidar_ros_msg_.header.frame_id;
     std::stringstream ss;
-    ss << lidar_ros_msg_.header.stamp.sec << "." << lidar_ros_msg_.header.stamp.nanosec;
-    lidar_msg.timestamp = stoi(ss.str());
+    ss << lidar_ros_msg_.header.stamp.sec << lidar_ros_msg_.header.stamp.nanosec;
+    lidar_msg.timestamp = stoul(ss.str());
     pcl::fromROSMsg(lidar_ros_msg_, lidar_msg.cloud);
     return lidar_msg;
 }
@@ -39,8 +37,8 @@ CameraMessageT MessageConverter::getCameraMessage() {
     CameraMessageT camera_msg;
     camera_msg.frame_id = camera_ros_msg_.header.frame_id;
     std::stringstream ss;
-    ss << camera_ros_msg_.header.stamp.sec << "." << camera_ros_msg_.header.stamp.nanosec;
-    camera_msg.timestamp = stoi(ss.str());
+    ss << camera_ros_msg_.header.stamp.sec << camera_ros_msg_.header.stamp.nanosec;
+    camera_msg.timestamp = stoul(ss.str());
     camera_msg.image = cv_bridge::toCvCopy(camera_ros_msg_, "rgb8")->image;
     return camera_msg;
 }
@@ -61,8 +59,8 @@ CameraCalibrationT MessageConverter::getCameraCalibration() {
 OdometryMessageT MessageConverter::getOdometryMessage() {
     OdometryMessageT odometry_msg;
     std::stringstream ss;
-    ss << odometry_ros_msg_.header.stamp.sec << "." << odometry_ros_msg_.header.stamp.nanosec;
-    odometry_msg.timestamp = stoi(ss.str());
+    ss << odometry_ros_msg_.header.stamp.sec << odometry_ros_msg_.header.stamp.nanosec;
+    odometry_msg.timestamp = stoul(ss.str());
     odometry_msg.position = { odometry_ros_msg_.pose.pose.position.x, odometry_ros_msg_.pose.pose.position.y, odometry_ros_msg_.pose.pose.position.z };
     odometry_msg.orientation = { odometry_ros_msg_.pose.pose.orientation.w, odometry_ros_msg_.pose.pose.orientation.x, odometry_ros_msg_.pose.pose.orientation.y, odometry_ros_msg_.pose.pose.orientation.z };
     return odometry_msg;

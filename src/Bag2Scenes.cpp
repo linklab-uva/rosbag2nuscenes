@@ -69,7 +69,7 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     bag_dir_ = rosbag_dir.parent_path().filename();
     srand(time(0));
     indicators::show_console_cursor(false);
-    previous_sampled_timestamp_ = 0;
+    previous_sampled_timestamp_ = bag_data_.starting_time.time_since_epoch().count();
     previous_sample_token_ = "";
     next_sample_token_ = generateToken();
     nbr_samples_ = 0;
@@ -481,9 +481,8 @@ fs::path Bag2Scenes::getFilename(std::string channel, unsigned long timestamp) {
 }
 
 bool Bag2Scenes::is_key_frame(std::string channel, unsigned long timestamp) {
-    timestamp_mutex_.lock();
-    if (previous_sampled_timestamp_ == 0 || timestamp - previous_sampled_timestamp_ > 5 * pow(10, 8)) {
-        previous_sampled_timestamp_ += 5 * pow(10, 8);
+    if (previous_sampled_timestamp_ == bag_data_.starting_time.time_since_epoch().count() || (long) timestamp - (long) previous_sampled_timestamp_ > 5 * pow(10, 8)) {
+        previous_sampled_timestamp_ += 5 * pow(10,8);
         nbr_samples_++;
         nlohmann::json sample;
         current_sample_token_ = next_sample_token_;
@@ -497,14 +496,11 @@ bool Bag2Scenes::is_key_frame(std::string channel, unsigned long timestamp) {
         samples_.push_back(sample);
         sensors_sampled_.clear();
         sensors_sampled_.insert({channel});
-        timestamp_mutex_.unlock();
         return true;
     } else if (sensors_sampled_.find(channel) == sensors_sampled_.end()) {
         sensors_sampled_.insert({channel});
-        timestamp_mutex_.unlock();
         return true;
     }
-    timestamp_mutex_.unlock();
     return false;
 }
 
