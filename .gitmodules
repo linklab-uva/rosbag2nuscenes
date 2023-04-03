@@ -1,0 +1,9 @@
+[submodule "yaml-cpp"]
+	path = yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp.git
+[submodule "indicators"]
+	path = indicators
+	url = https://github.com/p-ranav/indicators.git
+[submodule "nuscenes-devkit"]
+	path = nuscenes-devkit
+	url = git@github.com:linklab-uva/nuscenes-devkit.git
