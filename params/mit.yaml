@@ -3,7 +3,7 @@ BAG_INFO:
   DESCRIPTION: Low speed multi-agent laps with KAIST
   ODOM_TOPIC: /vehicle_8/local_odometry
   TRACK: IMS
-  URDF: av21.urdf
+  URDF: urdf/av21.urdf
 SENSOR_INFO:
   LIDAR_FRONT:
     TOPIC: /luminar_front_points
@@ -14,9 +14,6 @@ SENSOR_INFO:
   LIDAR_RIGHT:
     TOPIC: /luminar_right_points
     FRAME: luminar_right
-  LIDAR_ALL:
-    TOPIC: 
-    FRAME: rear_axle_middle
   CAMERA_FRONT_LEFT:
     TOPIC: /camera/front_left/image/compressed
     FRAME: camera_front_left
@@ -25,10 +22,6 @@ SENSOR_INFO:
     TOPIC: /camera/front_left_center/image/compressed
     FRAME: camera_front_1
     CALIB: /camera/front_left_center/camera_info
-  CAMERA_FRONT_RIGHT_CENTER:
-    TOPIC:
-    FRAME: camera_front_2
-    CALIB:
   CAMERA_FRONT_RIGHT:
     TOPIC: /camera/front_right/image/compressed
     FRAME: camera_front_right
@@ -44,12 +37,3 @@ SENSOR_INFO:
   RADAR_FRONT:
     TOPIC: /radar_front/esr_track
     FRAME: radar_front
-  RADAR_LEFT:
-    TOPIC: 
-    FRAME: radar_port
-  RADAR_RIGHT:
-    TOPIC: 
-    FRAME: radar_starboard
-  RADAR_REAR:
-    TOPIC: 
-    FRAME: radar_rear
