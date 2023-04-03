@@ -125,6 +125,7 @@ void Bag2Scenes::writeScene() {
     std::ofstream sample_data_out("v1.0-mini/sample_data.json");
     sample_data_out << std::setw(4) << sample_data << std::endl;
     sample_data_out.close();
+    samples_.back()["next"] = "";
     std::ofstream sample_out("v1.0-mini/sample.json");
     sample_out << std::setw(4) << samples_ << std::endl;
     sample_out.close();
