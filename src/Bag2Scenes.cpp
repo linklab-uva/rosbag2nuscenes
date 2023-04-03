@@ -93,8 +93,8 @@ void Bag2Scenes::writeScene() {
     nlohmann::json ego_poses;
     nlohmann::json sample_data;
     nlohmann::json scenes;
-    if (fs::exists("v1.0-mini/ego_poses.json")) {
-        std::ifstream ego_poses_in("v1.0-mini/ego_poses.json");
+    if (fs::exists("v1.0-mini/ego_pose.json")) {
+        std::ifstream ego_poses_in("v1.0-mini/ego_pose.json");
         ego_poses = nlohmann::json::parse(ego_poses_in);
         ego_poses_in.close();
     }
@@ -119,7 +119,7 @@ void Bag2Scenes::writeScene() {
     std::thread sensor_data_thread(&Bag2Scenes::writeSampleData, this, std::ref(sample_data));
     ego_pose_thread.join();
     sensor_data_thread.join();
-    std::ofstream ego_poses_out("v1.0-mini/ego_poses.json");
+    std::ofstream ego_poses_out("v1.0-mini/ego_pose.json");
     ego_poses_out << std::setw(4) << ego_poses << std::endl;
     ego_poses_out.close();
     std::ofstream sample_data_out("v1.0-mini/sample_data.json");
@@ -136,6 +136,7 @@ void Bag2Scenes::writeScene() {
     std::ofstream scene_out("v1.0-mini/scene.json");
     scene_out << std::setw(4) << scenes << std::endl;
     scene_out.close();
+    writeTaxonomyFiles();
     indicators::show_console_cursor(true);
     std::cout << "Done." << std::endl;
 }
@@ -247,7 +248,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 sample_data["ego_pose_token"] = getClosestEgoPose(radar_message.timestamp);
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
-                sample_data["timestamp"] = radar_message.timestamp;
+                sample_data["timestamp"] = ((double)radar_message.timestamp) * pow(10, -8);
                 sample_data["prev"] = frame_info_[radar_message.frame_id]["previous_token"].as<std::string>();
                 frame_info_[radar_message.frame_id]["previous_token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
                 frame_info_[radar_message.frame_id]["next_token"] = generateToken();
@@ -261,7 +262,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 sample_data["ego_pose_token"] = getClosestEgoPose(camera_message.timestamp);
                 sample_data["height"] = camera_message.image.rows;
                 sample_data["width"] = camera_message.image.cols;
-                sample_data["timestamp"] = camera_message.timestamp;
+                sample_data["timestamp"] = ((double)camera_message.timestamp) * pow(10, -8);
                 sample_data["prev"] = frame_info_[camera_message.frame_id]["previous_token"].as<std::string>();
                 frame_info_[camera_message.frame_id]["previous_token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
                 frame_info_[camera_message.frame_id]["next_token"] = generateToken();
@@ -279,7 +280,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                 sample_data["ego_pose_token"] = getClosestEgoPose(lidar_message.timestamp);
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
-                sample_data["timestamp"] = lidar_message.timestamp;
+                sample_data["timestamp"] = ((double)lidar_message.timestamp) * pow(10, -8);
                 sample_data["prev"] = frame_info_[lidar_message.frame_id]["previous_token"].as<std::string>();
                 frame_info_[lidar_message.frame_id]["previous_token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
                 frame_info_[lidar_message.frame_id]["next_token"] = generateToken();
@@ -296,7 +297,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             filename_str = filename.u8string();
             sample_data["filename"] = filename_str;
             sample_data["fileformat"] = filename_str.substr(filename_str.find('.')+1);
-            sample_data["is_key_frame"] = (int) (filename_str.find("samples") != std::string::npos);
+            sample_data["is_key_frame"] = (bool) (filename_str.find("samples") != std::string::npos);
             previous_data.push_back(sample_data);
         }
     }
@@ -331,12 +332,12 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
             OdometryMessageT odometry_message = message_converter.getOdometryMessage();
             nlohmann::json new_pose;
             new_pose["token"] = generateToken();
-            new_pose["timestamp"] = odometry_message.timestamp;
+            new_pose["timestamp"] = ((double)odometry_message.timestamp) * pow(10, -8);
             new_pose["rotation"] = odometry_message.orientation;
             new_pose["translation"] = odometry_message.position;
             previous_poses.push_back(new_pose);
             std::unique_lock<std::mutex> lck(ego_pose_mutex_);
-            ego_pose_queue_.push_back(std::pair {new_pose["timestamp"], new_pose["token"]});
+            ego_pose_queue_.push_back(std::pair {odometry_message.timestamp, new_pose["token"]});
             if (waiting_timestamp_ && odometry_message.timestamp > waiting_timestamp_) {
                 waiting_timestamp_ = 0;
                 ego_pose_ready_.notify_all();
@@ -435,9 +436,78 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
     return sensor_token;
 }
 
+void Bag2Scenes::writeTaxonomyFiles() {
+    nlohmann::json category;
+    nlohmann::json attribute;
+    nlohmann::json visibility;
+    nlohmann::json instance;
+    nlohmann::json annotation;
+    annotation["token"] = generateToken();
+    if (!fs::exists("v1.0-mini/category.json")) {
+        category["token"] = generateToken();
+        category["name"] = "";
+        category["description"] = "";
+        nlohmann::json categories;
+        categories.push_back(category);
+        std::ofstream category_out("v1.0-mini/category.json");
+        category_out << std::setw(4) << categories << std::endl;
+        category_out.close();
+    }
+    if (!fs::exists("v1.0-mini/attribute.json")) {
+        attribute["token"] = generateToken();
+        attribute["name"] = "";
+        attribute["description"] = "";
+        nlohmann::json attributes;
+        attributes.push_back(attribute);
+        std::ofstream attribute_out("v1.0-mini/attribute.json");
+        attribute_out << std::setw(4) << attributes << std::endl;
+        attribute_out.close();
+    }
+    if (!fs::exists("v1.0-mini/visibility.json")) {
+        visibility["token"] = "1";
+        visibility["description"] = "";
+        visibility["level"] = "";
+        nlohmann::json visibilities;
+        visibilities.push_back(visibility);
+        std::ofstream visibility_out("v1.0-mini/visibility.json");
+        visibility_out << std::setw(4) << visibilities << std::endl;
+        visibility_out.close();
+    }
+    if (!fs::exists("v1.0-mini/instance.json")) {
+        instance["token"] = generateToken();
+        instance["category_token"] = category["token"];
+        instance["nbr_annotations"] = 0;
+        instance["first_annotation_token"] = annotation["token"];
+        instance["last_annotation_token"] = annotation["token"];
+        nlohmann::json instances;
+        instances.push_back(instance);
+        std::ofstream instance_out("v1.0-mini/instance.json");
+        instance_out << std::setw(4) << instances << std::endl;
+        instance_out.close();
+    }
+    if (!fs::exists("v1.0-mini/sample_annotation.json")) {
+        annotation["sample_token"] = current_sample_token_;
+        annotation["instance_token"] = instance["token"];
+        annotation["visibility_token"] = visibility["token"];
+        annotation["attribute_tokens"] = std::vector<std::string> {attribute["token"]};
+        annotation["translation"] = std::vector<float> {0.0, 0.0, 0.0};
+        annotation["size"] = std::vector<float> {0.0, 0.0, 0.0};
+        annotation["rotation"] = std::vector<float> {1.0, 0.0, 0.0, 0.0};
+        annotation["prev"] = "";
+        annotation["next"] = "";
+        annotation["num_lidar_pts"] = 0;
+        annotation["num_radar_pts"] = 0;
+        nlohmann::json annotations;
+        annotations.push_back(annotation);
+        std::ofstream annotation_out("v1.0-mini/sample_annotation.json");
+        annotation_out << std::setw(4) << annotations << std::endl;
+        annotation_out.close();
+    }
+}
+
 std::string Bag2Scenes::generateToken() {
-    char token[17];
-    for (int i = 0; i < 17; i++) {
+    char token[33];
+    for (int i = 0; i < 33; i++) {
         sprintf(token + i, "%x", rand() % 16);
     }
     return std::string(token);
@@ -481,13 +551,13 @@ fs::path Bag2Scenes::getFilename(std::string channel, unsigned long timestamp) {
 }
 
 bool Bag2Scenes::is_key_frame(std::string channel, unsigned long timestamp) {
-    if (previous_sampled_timestamp_ == bag_data_.starting_time.time_since_epoch().count() || (long) timestamp - (long) previous_sampled_timestamp_ > 5 * pow(10, 8)) {
+    if (previous_sampled_timestamp_ == (unsigned long) bag_data_.starting_time.time_since_epoch().count() || (long) timestamp - (long) previous_sampled_timestamp_ > 5 * pow(10, 8)) {
         previous_sampled_timestamp_ += 5 * pow(10,8);
         nbr_samples_++;
         nlohmann::json sample;
         current_sample_token_ = next_sample_token_;
         sample["token"] = current_sample_token_;
-        sample["timestamp"] = previous_sampled_timestamp_;
+        sample["timestamp"] = ((double) previous_sampled_timestamp_) * pow(10,-8);
         sample["scene_token"] = scene_token_;
         sample["prev"] = previous_sample_token_;
         previous_sample_token_ = next_sample_token_;
@@ -516,7 +586,7 @@ std::string Bag2Scenes::getClosestEgoPose(unsigned long timestamp) {
     }
     std::string previous_token;
     unsigned long previous_time_difference;
-    for (int i = 0; i < ego_pose_queue_.size(); i++) {
+    for (unsigned long i = 0; i < ego_pose_queue_.size(); i++) {
         if (std::get<0>(ego_pose_queue_[i]) >= timestamp) {
             std::string return_token;
             if (std::get<0>(ego_pose_queue_[i]) - timestamp < previous_time_difference) {
@@ -531,4 +601,6 @@ std::string Bag2Scenes::getClosestEgoPose(unsigned long timestamp) {
         previous_time_difference = timestamp - std::get<0>(ego_pose_queue_[i]);
         previous_token = std::get<1>(ego_pose_queue_[i]);
     }
+    printf("Thread synchronization failed");
+    exit(1);
 }

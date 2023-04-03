@@ -65,6 +65,8 @@ class Bag2Scenes {
 
         void writeCalibratedSensor(std::string frame, std::vector<std::vector<float>> camera_intrinsic);
 
+        void writeTaxonomyFiles();
+
         std::string writeSensor(std::string channel);
 
 
