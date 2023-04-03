@@ -21,3 +21,10 @@ make
 ./rosbag2nuscenes /path/to/bag/file /path/to/parameter/file
 ```
 
+## nuScenes Dev-Kit
+
+Along with their dataset, the Motional team also released a python development kit to interact with and explore the dataset. This development kit is mostly  functional with datasets generated using the conversion library, but there are some hard-coded sensor names that cause issues when sensors are named differently than the sensors in the nuScenes dataset. We have created a fork of the nuScenes dev-kit that is compatible with datasets created with our conversion tool, which should have been cloned with the conversion tool. Follow the instructions [here](https://github.com/linklab-uva/nuscenes-devkit/blob/master/docs/installation.md) to build the dev-kit from source.
+
+The Jupyter notebook tutorial that accompanies the dev-kit is also available in this repo. Once you have created your dataset, you can use this notebook as a starting point to get comfortable exploring your data.
+
+Note: There is no sadly no way of annotating all of the objects in your bag file automatically, so the conversion library creates dummy entries in all json files associated with annotations in the nuScenes dataset in order to maintain dompatibility with the dev-kit.
