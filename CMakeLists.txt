@@ -27,14 +27,6 @@ find_package(pcl_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-if (NOT TARGET indicators)
-    add_subdirectory(indicators)
-endif()
-
-if (NOT TARGET yaml-cpp)
-    add_subdirectory(yaml-cpp)
-endif() 
-
 include_directories(
     ${OpenCV_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
@@ -47,5 +39,9 @@ file(GLOB_RECURSE SOURCE_FILES
     src/*.cpp
 )
 
-add_executable(${PROJECT_NAME} main.cpp ${SOURCE_FILES})
+file(GLOB_RECURSE YAML_SOURCE_FILES
+    yaml-cpp/src/*.cpp
+)
+
+add_executable(${PROJECT_NAME} main.cpp ${SOURCE_FILES} ${YAML_SOURCE_FILES})
 ament_target_dependencies(${PROJECT_NAME} sensor_msgs delphi_esr_msgs nav_msgs rosbag2_cpp rclcpp rosbag2 rosbag2_storage pcl_conversions pcl_ros cv_bridge)

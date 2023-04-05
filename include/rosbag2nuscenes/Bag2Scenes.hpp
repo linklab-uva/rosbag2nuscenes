@@ -22,7 +22,7 @@
 #include <rosbag2_cpp/converter_interfaces/serialization_format_converter.hpp>
 #include <rosbag2_storage/storage_options.hpp>
 #include <rcpputils/asserts.hpp>
-#include "yaml-cpp/node/node.h"
+#include "yaml-cpp/yaml.h"
 #include <nlohmann/json.hpp>
 #include "pugixml.hpp"
 #include <Eigen/Geometry>
