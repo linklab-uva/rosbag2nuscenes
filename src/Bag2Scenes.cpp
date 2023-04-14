@@ -1,7 +1,7 @@
 #include "rosbag2nuscenes/Bag2Scenes.hpp"
 #include <iostream>
 
-Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) : 
+Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file, int num_workers) : 
 odometry_bar_{
         indicators::option::BarWidth{80},
         indicators::option::ForegroundColor{indicators::Color::white},
@@ -74,6 +74,7 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     next_sample_token_ = generateToken();
     nbr_samples_ = 0;
     waiting_timestamp_ = 0;
+    num_workers_ = num_workers;
 }
 
 void Bag2Scenes::writeScene() {
@@ -215,7 +216,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
     rosbag2_cpp::SerializationFormatConverterFactory factory;
     std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer = factory.load_deserializer("cdr");
     MessageConverter message_converter;
-    SensorDataWriter data_writer;
+    SensorDataWriter data_writer(num_workers_);
     std::unordered_set<std::string> calibrated_sensors;
     fs::path filename;
     std::string filename_str;
@@ -237,55 +238,55 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             }
             nlohmann::json sample_data;
             if (msg_type ==  "delphi_esr_msgs/msg/EsrTrack") {
-                RadarMessageT radar_message = message_converter.getRadarMessage();
+                RadarMessageT* radar_message = new RadarMessageT {message_converter.getRadarMessage()};
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-                    writeCalibratedSensor(radar_message.frame_id, std::vector<std::vector<float>>());
+                    writeCalibratedSensor(radar_message->frame_id, std::vector<std::vector<float>>());
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
-                filename = getFilename(radar_message.frame_id, radar_message.timestamp);
-                data_writer.writeRadarData(radar_message, filename);
-                sample_data["token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[radar_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = getClosestEgoPose(radar_message.timestamp);
+                filename = getFilename(radar_message->frame_id, radar_message->timestamp);
+                sample_data["token"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[radar_message->frame_id]["sensor_token"].as<std::string>();
+                sample_data["ego_pose_token"] = getClosestEgoPose(radar_message->timestamp);
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
-                sample_data["timestamp"] = ((double)radar_message.timestamp) * pow(10, -8);
-                sample_data["prev"] = frame_info_[radar_message.frame_id]["previous_token"].as<std::string>();
-                frame_info_[radar_message.frame_id]["previous_token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
-                frame_info_[radar_message.frame_id]["next_token"] = generateToken();
-                sample_data["next"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
+                sample_data["timestamp"] = ((double)radar_message->timestamp) * pow(10, -8);
+                sample_data["prev"] = frame_info_[radar_message->frame_id]["previous_token"].as<std::string>();
+                frame_info_[radar_message->frame_id]["previous_token"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+                frame_info_[radar_message->frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+                data_writer.writeSensorData(radar_message, filename);
             } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
-                CameraMessageT camera_message = message_converter.getCameraMessage();
-                filename = getFilename(camera_message.frame_id, camera_message.timestamp);
-                data_writer.writeCameraData(camera_message, filename);
-                sample_data["token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[camera_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = getClosestEgoPose(camera_message.timestamp);
-                sample_data["height"] = camera_message.image.rows;
-                sample_data["width"] = camera_message.image.cols;
-                sample_data["timestamp"] = ((double)camera_message.timestamp) * pow(10, -8);
-                sample_data["prev"] = frame_info_[camera_message.frame_id]["previous_token"].as<std::string>();
-                frame_info_[camera_message.frame_id]["previous_token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
-                frame_info_[camera_message.frame_id]["next_token"] = generateToken();
-                sample_data["next"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
+                CameraMessageT* camera_message = new CameraMessageT {message_converter.getCameraMessage()};
+                filename = getFilename(camera_message->frame_id, camera_message->timestamp);
+                sample_data["token"] = frame_info_[camera_message->frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[camera_message->frame_id]["sensor_token"].as<std::string>();
+                sample_data["ego_pose_token"] = getClosestEgoPose(camera_message->timestamp);
+                sample_data["height"] = camera_message->image.rows;
+                sample_data["width"] = camera_message->image.cols;
+                sample_data["timestamp"] = ((double)camera_message->timestamp) * pow(10, -8);
+                sample_data["prev"] = frame_info_[camera_message->frame_id]["previous_token"].as<std::string>();
+                frame_info_[camera_message->frame_id]["previous_token"] = frame_info_[camera_message->frame_id]["next_token"].as<std::string>();
+                frame_info_[camera_message->frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[camera_message->frame_id]["next_token"].as<std::string>();
+                data_writer.writeSensorData(camera_message, filename);
             } else if (msg_type == "sensor_msgs/msg/PointCloud2") {
-                LidarMessageT lidar_message = message_converter.getLidarMessage();
+                LidarMessageT* lidar_message = new LidarMessageT {message_converter.getLidarMessage()};
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-                    writeCalibratedSensor(lidar_message.frame_id, std::vector<std::vector<float>>());
+                    writeCalibratedSensor(lidar_message->frame_id, std::vector<std::vector<float>>());
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
-                filename = getFilename(lidar_message.frame_id, lidar_message.timestamp);
-                data_writer.writeLidarData(lidar_message, filename);
-                sample_data["token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[lidar_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = getClosestEgoPose(lidar_message.timestamp);
+                filename = getFilename(lidar_message->frame_id, lidar_message->timestamp);
+                sample_data["token"] = frame_info_[lidar_message->frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[lidar_message->frame_id]["sensor_token"].as<std::string>();
+                sample_data["ego_pose_token"] = getClosestEgoPose(lidar_message->timestamp);
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
-                sample_data["timestamp"] = ((double)lidar_message.timestamp) * pow(10, -8);
-                sample_data["prev"] = frame_info_[lidar_message.frame_id]["previous_token"].as<std::string>();
-                frame_info_[lidar_message.frame_id]["previous_token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
-                frame_info_[lidar_message.frame_id]["next_token"] = generateToken();
-                sample_data["next"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
+                sample_data["timestamp"] = ((double)lidar_message->timestamp) * pow(10, -8);
+                sample_data["prev"] = frame_info_[lidar_message->frame_id]["previous_token"].as<std::string>();
+                frame_info_[lidar_message->frame_id]["previous_token"] = frame_info_[lidar_message->frame_id]["next_token"].as<std::string>();
+                frame_info_[lidar_message->frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[lidar_message->frame_id]["next_token"].as<std::string>();
+                data_writer.writeSensorData(lidar_message, filename);
             } else if (msg_type == "sensor_msgs/msg/CameraInfo") {
                 CameraCalibrationT camera_calibration = message_converter.getCameraCalibration();
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
@@ -302,6 +303,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             previous_data.push_back(sample_data);
         }
     }
+    data_writer.close();
 }
 
 void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {

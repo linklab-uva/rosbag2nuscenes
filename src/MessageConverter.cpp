@@ -19,7 +19,10 @@ RadarMessageT MessageConverter::getRadarMessage() {
                     1,
                     3,
                     0, 0, 0, 1, 0, 0} ;
-    RadarMessageT radar_msg {{ stoul(ss.str()), radar_ros_msg_.header.frame_id }, std::vector<RadarPointT> {radar_point}};
+    RadarMessageT radar_msg;
+    radar_msg.timestamp = stoul(ss.str());
+    radar_msg.frame_id = radar_ros_msg_.header.frame_id;
+    radar_msg.points = std::vector<RadarPointT> {radar_point};
     return radar_msg;
 }
 

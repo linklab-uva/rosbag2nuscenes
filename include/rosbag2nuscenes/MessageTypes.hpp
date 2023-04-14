@@ -12,6 +12,7 @@
 struct SensorMessageT {
     unsigned long timestamp;
     std::string frame_id;
+    virtual ~SensorMessageT() = default;
 };
 
 struct RadarPointT {

@@ -1,18 +1,20 @@
 #include "rosbag2nuscenes/SensorDataWriter.hpp"
 
-SensorDataWriter::SensorDataWriter() {
-
+SensorDataWriter::SensorDataWriter(int num_workers) {
+    for (int i = 0; i < num_workers; i++) {
+        thread_vector_.push_back(std::thread {&SensorDataWriter::writeFile, this});
+    }
 }
 
-void SensorDataWriter::writeRadarData(RadarMessageT msg, fs::path filename) {
+void SensorDataWriter::writeRadarData(RadarMessageT* msg, fs::path filename) {
     pcl::PointCloud<RadarPointT> radar_cloud;
-    for (RadarPointT point : msg.points)
+    for (RadarPointT point : msg->points)
         radar_cloud.points.push_back(point);
     pcl::io::savePCDFileBinary(filename, radar_cloud);
 }
 
-void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {
-    if (msg.cloud.empty()) {
+void SensorDataWriter::writeLidarData(LidarMessageT* msg, fs::path filename) {
+    if (msg->cloud.empty()) {
         throw pcl::IOException ("[pcl::PCDWriter::writeBinary] Input point cloud has no data!");
         exit(1);
     }
@@ -41,7 +43,7 @@ void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {
     }
     fields.resize (nri);
 
-    data_size = msg.cloud.size() * fsize;
+    data_size = msg->cloud.size() * fsize;
 
     // Prepare the map
     // Allocate disk space for the entire file to prevent bus errors.
@@ -61,7 +63,7 @@ void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {
     }
     // Copy the data
     char *out = &map[0] + data_idx;
-    for (const auto& point: msg.cloud) {
+    for (const auto& point: msg->cloud) {
         int nrj = 0;
         for (const auto &field : fields) {
             memcpy (out, reinterpret_cast<const char*> (&point) + field.offset, fields_sizes[nrj]);
@@ -77,6 +79,56 @@ void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {
     pcl::io::raw_close (fd);
 }
 
-void SensorDataWriter::writeCameraData(CameraMessageT msg, fs::path filename) {
-    cv::imwrite(filename, msg.image);
+void SensorDataWriter::writeCameraData(CameraMessageT* msg, fs::path filename) {
+    cv::imwrite(filename, msg->image);
+}
+
+void SensorDataWriter::writeSensorData(SensorMessageT* msg, fs::path filename) {
+    std::unique_lock<std::mutex> lck(queue_mutex_);
+    if (file_queue_.size() == MAX_QUEUE_SIZE) {
+        queue_ready_.wait(lck);
+    }
+    file_queue_.emplace(std::pair {msg, filename});
+    queue_mutex_.unlock();
+    queue_ready_.notify_one();
+}
+
+
+void SensorDataWriter::writeFile() {
+    RadarMessageT* radar_msg;
+    LidarMessageT* lidar_msg;
+    CameraMessageT* camera_msg;
+    while (!finished_) {
+        std::unique_lock<std::mutex> lck(queue_mutex_);
+        while(file_queue_.empty() && !finished_) {
+            queue_ready_.wait(lck);
+        }
+        if (finished_) return;
+        std::pair<SensorMessageT*, fs::path> data = file_queue_.front();
+        file_queue_.pop();
+        lck.unlock();
+        queue_ready_.notify_one();
+        if (radar_msg = dynamic_cast<RadarMessageT*> (std::get<0>(data))) {
+            writeRadarData(radar_msg, std::get<1>(data));
+            delete(radar_msg);
+            radar_msg = nullptr;
+        } else if (lidar_msg = dynamic_cast<LidarMessageT*> (std::get<0>(data))) {
+            writeLidarData(lidar_msg, std::get<1>(data));
+            delete(lidar_msg);
+            lidar_msg = nullptr;
+        } else if (camera_msg = dynamic_cast<CameraMessageT*> (std::get<0>(data))){
+            writeCameraData(camera_msg, std::get<1>(data));
+            delete(camera_msg);
+            camera_msg = nullptr;
+        } 
+    }
+}
+
+
+void SensorDataWriter::close() {
+    finished_ = true;
+    queue_ready_.notify_all();
+    for (auto& t : thread_vector_) {
+        t.join();
+    }
 }

@@ -37,7 +37,7 @@ namespace fs = std::filesystem;
 
 class Bag2Scenes {
     public:
-        Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file);
+        Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file, int num_workers);
 
         void writeScene();
 
@@ -69,7 +69,7 @@ class Bag2Scenes {
 
         std::string writeSensor(std::string channel);
 
-
+        int num_workers_;
         rosbag2_storage::StorageOptions storage_options_;
         rosbag2_cpp::ConverterOptions converter_options_;
         rosbag2_storage::BagMetadata bag_data_;
