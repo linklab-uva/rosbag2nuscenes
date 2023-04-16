@@ -25,7 +25,6 @@
 #include "yaml-cpp/yaml.h"
 #include <nlohmann/json.hpp>
 #include "pugixml.hpp"
-#include <Eigen/Geometry>
 #include <indicators/cursor_control.hpp>
 #include <indicators/block_progress_bar.hpp>
 #include <indicators/multi_progress.hpp>

@@ -1,6 +1,8 @@
 #ifndef MESSAGE_CONVERTER_HPP
 #define MESSAGE_CONVERTER_HPP
 
+#define PCL_NO_PRECOMPILE
+
 #include <cstring>
 #include "MessageTypes.hpp"
 #include "delphi_esr_msgs/msg/esr_track.hpp"

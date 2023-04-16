@@ -1,6 +1,8 @@
 #ifndef SENSOR_DATA_WRITER_HPP
 #define SENSOR_DATA_WRITER_HPP
 
+#define PCL_NO_PRECOMPILE
+
 #include "MessageTypes.hpp"
 #include <filesystem>
 #include <queue>

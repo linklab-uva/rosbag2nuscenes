@@ -510,7 +510,7 @@ void Bag2Scenes::writeTaxonomyFiles() {
 
 std::string Bag2Scenes::generateToken() {
     char token[33];
-    for (int i = 0; i < 33; i++) {
+    for (int i = 0; i < 32; i++) {
         sprintf(token + i, "%x", rand() % 16);
     }
     return std::string(token);

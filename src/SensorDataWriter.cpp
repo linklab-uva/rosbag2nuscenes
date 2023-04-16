@@ -7,10 +7,7 @@ SensorDataWriter::SensorDataWriter(int num_workers) {
 }
 
 void SensorDataWriter::writeRadarData(RadarMessageT* msg, fs::path filename) {
-    pcl::PointCloud<RadarPointT> radar_cloud;
-    for (RadarPointT point : msg->points)
-        radar_cloud.points.push_back(point);
-    pcl::io::savePCDFileBinary(filename, radar_cloud);
+    pcl::io::savePCDFile(filename, msg->cloud);
 }
 
 void SensorDataWriter::writeLidarData(LidarMessageT* msg, fs::path filename) {
@@ -108,15 +105,15 @@ void SensorDataWriter::writeFile() {
         file_queue_.pop();
         lck.unlock();
         queue_ready_.notify_one();
-        if (radar_msg = dynamic_cast<RadarMessageT*> (std::get<0>(data))) {
+        if ((radar_msg = dynamic_cast<RadarMessageT*> (std::get<0>(data)))) {
             writeRadarData(radar_msg, std::get<1>(data));
             delete(radar_msg);
             radar_msg = nullptr;
-        } else if (lidar_msg = dynamic_cast<LidarMessageT*> (std::get<0>(data))) {
+        } else if ((lidar_msg = dynamic_cast<LidarMessageT*> (std::get<0>(data)))) {
             writeLidarData(lidar_msg, std::get<1>(data));
             delete(lidar_msg);
             lidar_msg = nullptr;
-        } else if (camera_msg = dynamic_cast<CameraMessageT*> (std::get<0>(data))){
+        } else if ((camera_msg = dynamic_cast<CameraMessageT*> (std::get<0>(data)))){
             writeCameraData(camera_msg, std::get<1>(data));
             delete(camera_msg);
             camera_msg = nullptr;

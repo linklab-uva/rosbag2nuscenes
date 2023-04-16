@@ -22,7 +22,7 @@ RadarMessageT MessageConverter::getRadarMessage() {
     RadarMessageT radar_msg;
     radar_msg.timestamp = stoul(ss.str());
     radar_msg.frame_id = radar_ros_msg_.header.frame_id;
-    radar_msg.points = std::vector<RadarPointT> {radar_point};
+    radar_msg.cloud.push_back(radar_point);
     return radar_msg;
 }
 

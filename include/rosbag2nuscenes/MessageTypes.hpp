@@ -4,9 +4,11 @@
 #define PCL_NO_PRECOMPILE
 #include <string>
 #include <vector>
-#include <pcl/point_cloud.h>
+#include <pcl/memory.h>
+#include <pcl/pcl_macros.h>
 #include <pcl/point_types.h>
- #include <pcl/io/pcd_io.h>
+#include <pcl/point_cloud.h>
+#include <pcl/io/pcd_io.h>
 #include <opencv2/opencv.hpp>
 
 struct SensorMessageT {
@@ -59,7 +61,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(RadarPointT,
 )
 
 struct RadarMessageT : SensorMessageT {
-    std::vector<RadarPointT> points;
+    pcl::PointCloud<RadarPointT> cloud;
 };
 
 struct LidarMessageT : SensorMessageT {
