@@ -26,12 +26,12 @@ find_package(pcl_conversions REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 include_directories(
     ${OpenCV_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/indicators/include/
-    ${CMAKE_SOURCE_DIR}/yaml-cpp/include/
     ${CMAKE_SOURCE_DIR}/include/
 )
 
@@ -39,9 +39,5 @@ file(GLOB_RECURSE SOURCE_FILES
     src/*.cpp
 )
 
-file(GLOB_RECURSE YAML_SOURCE_FILES
-    yaml-cpp/src/*.cpp
-)
-
-add_executable(${PROJECT_NAME} main.cpp ${SOURCE_FILES} ${YAML_SOURCE_FILES})
-ament_target_dependencies(${PROJECT_NAME} sensor_msgs delphi_esr_msgs nav_msgs rosbag2_cpp rclcpp rosbag2 rosbag2_storage pcl_conversions pcl_ros cv_bridge)
+add_executable(${PROJECT_NAME} main.cpp ${SOURCE_FILES})
+ament_target_dependencies(${PROJECT_NAME} sensor_msgs delphi_esr_msgs nav_msgs rosbag2_cpp rclcpp rosbag2 rosbag2_storage pcl_conversions pcl_ros cv_bridge yaml-cpp)
