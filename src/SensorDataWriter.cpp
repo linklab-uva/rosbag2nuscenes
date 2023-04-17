@@ -41,7 +41,7 @@ void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {
     }
     fields.resize (nri);
 
-    data_size = msg.cloud.size() * fsize;
+    data_size = msg.cloud.size() * (fsize + 4);
 
     // Prepare the map
     // Allocate disk space for the entire file to prevent bus errors.
@@ -61,12 +61,15 @@ void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {
     }
     // Copy the data
     char *out = &map[0] + data_idx;
+    char zero[4] = {0, 0, 0, 0};
     for (const auto& point: msg.cloud) {
         int nrj = 0;
         for (const auto &field : fields) {
             memcpy (out, reinterpret_cast<const char*> (&point) + field.offset, fields_sizes[nrj]);
             out += fields_sizes[nrj++];
         }
+        memcpy (out, reinterpret_cast<const char*> (&zero), 4);
+        out += 4;
     }
     if (::munmap (map, (data_idx + data_size)) == -1) {
         pcl::io::raw_close (fd);
