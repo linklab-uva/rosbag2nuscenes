@@ -42,20 +42,22 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     }
     for (YAML::Node::iterator itr = param_yaml_["SENSOR_INFO"].begin(); itr != param_yaml_["SENSOR_INFO"].end(); itr++) {
         std::string sensor_name = itr->first.as<std::string>();
+        std::string modality = sensor_name.substr(0, sensor_name.find("_"));
+        std::transform(modality.begin(), modality.end(), modality.begin(), ::tolower);
+        std::string topic = itr->second["TOPIC"].as<std::string>();
         frame_info_[itr->second["FRAME"].as<std::string>()]["previous_timestamp"] = 0;
         frame_info_[itr->second["FRAME"].as<std::string>()]["previous_token"] = "";
         frame_info_[itr->second["FRAME"].as<std::string>()]["next_token"] = generateToken();
         frame_info_[itr->second["FRAME"].as<std::string>()]["name"] = sensor_name;
         frame_info_[itr->second["FRAME"].as<std::string>()]["sensor_token"] = generateToken();
-        std::string modality = sensor_name.substr(0, sensor_name.find("_"));
-        std::string topic = itr->second["TOPIC"].as<std::string>();
+        frame_info_[itr->second["FRAME"].as<std::string>()]["modality"] = modality;
         if (topic != "null") {
             topics_of_interest_.push_back(topic);
-            if (modality == "LIDAR") {
+            if (modality == "lidar") {
                 lidar_topics_.push_back(topic);
-            } else if (modality == "RADAR") {
+            } else if (modality == "radar") {
                 radar_topics_.push_back(topic);
-            } else if (modality == "CAMERA") {
+            } else if (modality == "camera") {
                 camera_topics_.push_back(topic);
                 camera_calibs_.push_back(itr->second["CALIB"].as<std::string>());
                 topics_of_interest_.push_back(itr->second["CALIB"].as<std::string>());
@@ -403,10 +405,8 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         nlohmann::json sensor;
         sensor_token = generateToken();
         sensor["token"] = sensor_token;
-        std::string modality = channel.substr(0, channel.find("_"));
         sensor["channel"] = channel;
-        std::transform(modality.begin(), modality.end(), modality.begin(), ::tolower);
-        sensor["modality"] = modality;
+        sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
         std::string directory = frame_info_[channel]["name"].as<std::string>();
         std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
         fs::create_directory(fs::path("samples") / directory);
@@ -424,10 +424,8 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         nlohmann::json sensor;
         sensor_token = generateToken();
         sensor["token"] = sensor_token;
-        std::string modality = channel.substr(0, channel.find("_"));
         sensor["channel"] = channel;
-        std::transform(modality.begin(), modality.end(), modality.begin(), ::tolower);
-        sensor["modality"] = modality;
+        sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
         std::string directory = frame_info_[channel]["name"].as<std::string>();
         std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
         fs::create_directory(fs::path("samples") / directory);

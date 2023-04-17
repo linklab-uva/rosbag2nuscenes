@@ -4,8 +4,6 @@
 #define PCL_NO_PRECOMPILE
 #include <string>
 #include <vector>
-#include <pcl/memory.h>
-#include <pcl/pcl_macros.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl/io/pcd_io.h>

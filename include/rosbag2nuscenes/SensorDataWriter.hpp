@@ -27,11 +27,11 @@ class SensorDataWriter {
     
     private:
 
-        void writeRadarData(RadarMessageT* msg, fs::path filename);
+        void writeRadarData(RadarMessageT msg, fs::path filename);
 
-        void writeLidarData(LidarMessageT* msg, fs::path filename);
+        void writeLidarData(LidarMessageT msg, fs::path filename);
         
-        void writeCameraData(CameraMessageT* msg, fs::path filename);
+        void writeCameraData(CameraMessageT msg, fs::path filename);
         
         void writeFile();
         
