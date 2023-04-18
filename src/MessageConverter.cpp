@@ -60,7 +60,7 @@ CameraCalibrationT MessageConverter::getCameraCalibration() {
     for (int i = 0; i < 3; i++) {
         std::vector<float> intrinsic_row;
         for (int j = 0; j < 3; j++) {
-            intrinsic_row.push_back(camera_info_ros_msg_.k[3*i + j]);
+            intrinsic_row.push_back(camera_calib_adjusted.coeff(i, j));
         }
         calibration_msg.intrinsic.push_back(intrinsic_row);
     }

@@ -296,6 +296,9 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
                 continue;
+            } else {
+                printf("Message filtering broken... Check your param file.\n");
+                exit(1);
             }
             sample_data["sample_token"] = current_sample_token_;
             filename_str = filename.u8string();
@@ -405,10 +408,9 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         nlohmann::json sensor;
         sensor_token = generateToken();
         sensor["token"] = sensor_token;
-        sensor["channel"] = channel;
-        sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
         std::string directory = frame_info_[channel]["name"].as<std::string>();
-        std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
+        sensor["channel"] = directory;
+        sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
         fs::create_directory(fs::path("samples") / directory);
         fs::create_directory(fs::path("sweeps") / directory);
         sensors.push_back(sensor);
@@ -424,10 +426,9 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         nlohmann::json sensor;
         sensor_token = generateToken();
         sensor["token"] = sensor_token;
-        sensor["channel"] = channel;
-        sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
         std::string directory = frame_info_[channel]["name"].as<std::string>();
-        std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
+        sensor["channel"] = directory;
+        sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
         fs::create_directory(fs::path("samples") / directory);
         fs::create_directory(fs::path("sweeps") / directory);
         sensors.push_back(sensor);
