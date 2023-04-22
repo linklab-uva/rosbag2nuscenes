@@ -385,10 +385,16 @@ void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::ve
             if (!euler_angles.size()) {
                 euler_angles = {0.0, 0.0, 0.0};
             }
-            Eigen::Quaternionf quat;
-            quat = Eigen::AngleAxisf(euler_angles[0], Eigen::Vector3f::UnitX()) 
+            Eigen::Quaternionf quat = Eigen::AngleAxisf(euler_angles[0], Eigen::Vector3f::UnitX()) 
                     * Eigen::AngleAxisf(euler_angles[1], Eigen::Vector3f::UnitY())
                     * Eigen::AngleAxisf(euler_angles[2], Eigen::Vector3f::UnitZ());
+            if (frame_info_[channel]["modality"].as<std::string>() == "camera") {
+                Eigen::AngleAxisf rollAngle(0.5 * M_PI, Eigen::Vector3f::UnitX());
+                Eigen::AngleAxisf pitchAngle(0.0, Eigen::Vector3f::UnitY());
+                Eigen::AngleAxisf yawAngle(-0.5 * M_PI, Eigen::Vector3f::UnitZ());
+                Eigen::Quaternionf camera_rotation {0.5, -0.5, 0.5, -0.5}; //= rollAngle * pitchAngle * yawAngle;
+                quat = camera_rotation * quat;
+            }
             std::vector<float> wxyz = {quat.w(), quat.x(), quat.y(), quat.z()};
             calibrated_sensor["rotation"] = wxyz;
             calibrated_sensor["camera_intrinsic"] = camera_intrinsic;

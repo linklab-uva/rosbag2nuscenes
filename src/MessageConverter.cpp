@@ -49,18 +49,10 @@ CameraMessageT MessageConverter::getCameraMessage() {
 CameraCalibrationT MessageConverter::getCameraCalibration() {
     CameraCalibrationT calibration_msg;
     calibration_msg.frame_id = camera_info_ros_msg_.header.frame_id;
-    Eigen::Matrix3f camera_calib;
-    memcpy(camera_calib.data(), camera_info_ros_msg_.k.data(), camera_info_ros_msg_.k.size() * sizeof(camera_info_ros_msg_.k[0]));
-    Eigen::AngleAxisf rollAngle(0.0, Eigen::Vector3f::UnitX());
-    Eigen::AngleAxisf yawAngle(0.0, Eigen::Vector3f::UnitY());
-    Eigen::AngleAxisf pitchAngle(0.5 * M_PI, Eigen::Vector3f::UnitZ());
-
-    Eigen::Quaternionf q = yawAngle * pitchAngle * rollAngle;
-    Eigen::Matrix3f camera_calib_adjusted = q.matrix() * camera_calib;
     for (int i = 0; i < 3; i++) {
         std::vector<float> intrinsic_row;
         for (int j = 0; j < 3; j++) {
-            intrinsic_row.push_back(camera_calib_adjusted.coeff(i, j));
+            intrinsic_row.push_back(camera_info_ros_msg_.k[3*i + j]);
         }
         calibration_msg.intrinsic.push_back(intrinsic_row);
     }
