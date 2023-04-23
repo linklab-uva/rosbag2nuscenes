@@ -40,4 +40,6 @@ RUN . /opt/ros/humble/setup.sh && \
     cmake .. && \
     make
 
-ENTRYPOINT ["./rosbag2nuscenes"]
+WORKDIR /rosbag2nuscenes/docker
+
+ENTRYPOINT ["./entrypoint.sh"]
