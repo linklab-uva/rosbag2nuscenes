@@ -19,21 +19,21 @@ struct RadarPointT {
     float x;
     float y;
     float z;
-    int dyn_prop;
-    int id;
+    int8_t dyn_prop;
+    int16_t id;
     float rcs;
     float vx;
     float vy;
     float vx_comp;
     float vy_comp;
-    int is_quality_valid;
-    int ambig_state;
-    int x_rms;
-    int y_rms;
-    int invalid_state;
-    int pdh0;
-    int vx_rms;
-    int vy_rms;
+    int8_t is_quality_valid;
+    int8_t ambig_state;
+    int8_t x_rms;
+    int8_t y_rms;
+    int8_t invalid_state;
+    int8_t pdh0;
+    int8_t vx_rms;
+    int8_t vy_rms;
     PCL_MAKE_ALIGNED_OPERATOR_NEW
 };
 
@@ -41,21 +41,21 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(RadarPointT,
                                     (float, x, x)
                                     (float, y, y)
                                     (float, z, z)
-                                    (int, dyn_prop, dyn_prop)
-                                    (int, id, id)
+                                    (int8_t, dyn_prop, dyn_prop)
+                                    (int16_t, id, id)
                                     (float, rcs, rcs)
                                     (float, vx, vx)
                                     (float, vy, vy)
                                     (float, vx_comp, vx_comp)
                                     (float, vy_comp, vy_comp)
-                                    (int, is_quality_valid, is_quality_valid)
-                                    (int, ambig_state, ambig_state)
-                                    (int, x_rms, x_rms)
-                                    (int, y_rms, y_rms)
-                                    (int, invalid_state, invalid_state)
-                                    (int, pdh0, pdh0)
-                                    (int, vx_rms, vx_rms)
-                                    (int, vy_rms, vy_rms)
+                                    (int8_t, is_quality_valid, is_quality_valid)
+                                    (int8_t, ambig_state, ambig_state)
+                                    (int8_t, x_rms, x_rms)
+                                    (int8_t, y_rms, y_rms)
+                                    (int8_t, invalid_state, invalid_state)
+                                    (int8_t, pdh0, pdh0)
+                                    (int8_t, vx_rms, vx_rms)
+                                    (int8_t, vy_rms, vy_rms)
 )
 
 struct RadarMessageT : SensorMessageT {

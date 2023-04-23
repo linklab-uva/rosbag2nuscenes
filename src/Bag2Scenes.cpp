@@ -594,7 +594,7 @@ std::string Bag2Scenes::getClosestEgoPose(unsigned long timestamp) {
         ego_pose_ready_.wait(lck);
     }
     std::string previous_token;
-    unsigned long previous_time_difference;
+    unsigned long previous_time_difference = 0;
     for (unsigned long i = 0; i < ego_pose_queue_.size(); i++) {
         if (std::get<0>(ego_pose_queue_[i]) >= timestamp) {
             std::string return_token;
