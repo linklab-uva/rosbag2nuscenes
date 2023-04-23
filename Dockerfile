@@ -40,4 +40,4 @@ RUN . /opt/ros/humble/setup.sh && \
     cmake .. && \
     make
 
-ENTRYPOINT ["sh", "rosbag2nuscenes"]
+ENTRYPOINT ["./rosbag2nuscenes"]

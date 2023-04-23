@@ -203,6 +203,7 @@ std::string Bag2Scenes::writeSample() {
 }
 
 void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
+    std::unique_lock<std::mutex> lck(ego_pose_mutex_);
     int sensor_data_msgs = 0;
     for (rosbag2_storage::TopicInformation topic_data : bag_data_.topics_with_message_count) {
         if (std::find(topics_of_interest_.begin(), topics_of_interest_.end(), topic_data.topic_metadata.name) != topics_of_interest_.end()) {
@@ -222,6 +223,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
     std::unordered_set<std::string> calibrated_sensors;
     fs::path filename;
     std::string filename_str;
+    lck.unlock();
     for (int i = 0; i < sensor_data_msgs; i++) {
         if (reader.has_next()) {
             auto serialized_message = reader.read_next();
@@ -312,6 +314,7 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
 }
 
 void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
+    std::unique_lock<std::mutex> lck(ego_pose_mutex_);
     std::string odometry_topic = param_yaml_["BAG_INFO"]["ODOM_TOPIC"].as<std::string>();
     int odometry_msgs = 0;
     for (rosbag2_storage::TopicInformation topic_data : bag_data_.topics_with_message_count) {
@@ -327,6 +330,7 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
     reader.set_filter(storage_filter);
     rosbag2_cpp::SerializationFormatConverterFactory factory;
     std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer = factory.load_deserializer("cdr");
+    lck.unlock();
     MessageConverter message_converter;
     for (int i = 0; i < odometry_msgs; i++) {
         if (reader.has_next()) {
@@ -425,15 +429,15 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         sensor_out << std::setw(4) << sensors << std::endl;
     } else {
         std::ifstream sensor_in("v1.0-mini/sensor.json");
+        std::string directory = frame_info_[channel]["name"].as<std::string>();
         sensors = nlohmann::json::parse(sensor_in);
         sensor_in.close();
         for (nlohmann::json sensor : sensors) {
-            if (sensor["channel"] == channel) return sensor["token"];
+            if (sensor["channel"] == directory) return sensor["token"];
         }
         nlohmann::json sensor;
         sensor_token = generateToken();
         sensor["token"] = sensor_token;
-        std::string directory = frame_info_[channel]["name"].as<std::string>();
         sensor["channel"] = directory;
         sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
         fs::create_directory(fs::path("samples") / directory);
@@ -594,7 +598,7 @@ std::string Bag2Scenes::getClosestEgoPose(unsigned long timestamp) {
         ego_pose_ready_.wait(lck);
     }
     std::string previous_token;
-    unsigned long previous_time_difference = 0;
+    unsigned long previous_time_difference = INT64_MAX;
     for (unsigned long i = 0; i < ego_pose_queue_.size(); i++) {
         if (std::get<0>(ego_pose_queue_[i]) >= timestamp) {
             std::string return_token;
