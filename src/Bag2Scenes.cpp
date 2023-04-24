@@ -423,8 +423,8 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         std::string directory = frame_info_[channel]["name"].as<std::string>();
         sensor["channel"] = directory;
         sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
-        fs::create_directory(fs::path("samples") / directory);
-        fs::create_directory(fs::path("sweeps") / directory);
+        fs::create_directory(output_dir_ / fs::path("samples") / directory);
+        fs::create_directory(output_dir_ / fs::path("sweeps") / directory);
         sensors.push_back(sensor);
         std::ofstream sensor_out(output_dir_ / "v1.0-mini/sensor.json");
         sensor_out << std::setw(4) << sensors << std::endl;
@@ -441,8 +441,8 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         sensor["token"] = sensor_token;
         sensor["channel"] = directory;
         sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
-        fs::create_directory(fs::path("samples") / directory);
-        fs::create_directory(fs::path("sweeps") / directory);
+        fs::create_directory(output_dir_ / fs::path("samples") / directory);
+        fs::create_directory(output_dir_ / fs::path("sweeps") / directory);
         sensors.push_back(sensor);
         std::ofstream sensor_out(output_dir_ / "v1.0-mini/sensor.json");
         sensor_out << std::setw(4) << sensors << std::endl;
@@ -557,10 +557,10 @@ fs::path Bag2Scenes::getFilename(std::string channel, unsigned long timestamp) {
     } else {
         base_dir = "sweeps";
     }
-    int size_s = std::snprintf( nullptr, 0, "%s/%s/%s__%s__%lu%s", base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str()) + 1; // Terminate with '\0'
+    int size_s = std::snprintf( nullptr, 0, "%s/%s/%s/%s__%s__%lu%s", output_dir_.c_str(), base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str()) + 1; // Terminate with '\0'
     size = static_cast<size_t>( size_s );
     buf = std::unique_ptr<char[]>( new char[ size ] );
-    std::snprintf( buf.get(), size, "%s/%s/%s__%s__%lu%s", base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str());
+    std::snprintf( buf.get(), size, "%s/%s/%s/%s__%s__%lu%s", output_dir_.c_str(), base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str());
     return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
 }
 
