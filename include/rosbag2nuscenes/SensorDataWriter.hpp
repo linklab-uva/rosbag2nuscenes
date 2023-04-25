@@ -41,7 +41,9 @@ class SensorDataWriter {
 
         std::mutex queue_mutex_;
 
-        std::condition_variable queue_ready_;
+        std::condition_variable queue_full_;
+
+        std::condition_variable queue_empty_;
 
         bool finished_;
 
