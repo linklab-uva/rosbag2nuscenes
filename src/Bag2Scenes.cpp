@@ -234,10 +234,10 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             auto library = rosbag2_cpp::get_typesupport_library(msg_type, "rosidl_typesupport_cpp");
             auto type_support = rosbag2_cpp::get_typesupport_handle(msg_type, "rosidl_typesupport_cpp", library);
             cdr_deserializer->deserialize(serialized_message, type_support, message_wrapper);
-            sensor_data_bar_.set_option(indicators::option::PostfixText{
-                std::to_string(i+1) + "/" + std::to_string(sensor_data_msgs)
-            });
-            progress_bars_.tick<0>();
+            // sensor_data_bar_.set_option(indicators::option::PostfixText{
+            //     std::to_string(i+1) + "/" + std::to_string(sensor_data_msgs)
+            // });
+            // progress_bars_.tick<0>();
             if (calibrated_sensors.size() == lidar_topics_.size() + radar_topics_.size() + camera_calibs_.size() && msg_type == "sensor_msgs/msg/CameraInfo") {
                 continue;
             }
@@ -356,10 +356,10 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
                 ego_pose_ready_.notify_all();
             }
         }
-        odometry_bar_.set_option(indicators::option::PostfixText{
-            std::to_string(i+1) + "/" + std::to_string(odometry_msgs)
-        });
-        progress_bars_.tick<1>();
+        // odometry_bar_.set_option(indicators::option::PostfixText{
+        //     std::to_string(i+1) + "/" + std::to_string(odometry_msgs)
+        // });
+        // progress_bars_.tick<1>();
     }
 }
 
