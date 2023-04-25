@@ -1,6 +1,6 @@
 #include "rosbag2nuscenes/SensorDataWriter.hpp"
 
-SensorDataWriter::SensorDataWriter(int num_workers) {
+SensorDataWriter::SensorDataWriter(int num_workers) : file_queue_(MAX_QUEUE_SIZE) {
     if (num_workers <=0) num_workers = 1;
     for (int i = 0; i < num_workers; i++) {
         thread_vector_.push_back(std::thread {&SensorDataWriter::writeFile, this});
@@ -92,7 +92,7 @@ void SensorDataWriter::writeSensorData(SensorMessageT* msg, fs::path filename) {
     if (file_queue_.size() == MAX_QUEUE_SIZE) {
         queue_full_.wait(lck);
     }
-    file_queue_.emplace(std::pair {msg, filename});
+    file_queue_.push_back(std::pair {msg, filename});
     lck.unlock();
     queue_empty_.notify_one();
 }
@@ -109,7 +109,7 @@ void SensorDataWriter::writeFile() {
         }
         if (finished_) return;
         std::pair<SensorMessageT*, fs::path> data = file_queue_.front();
-        file_queue_.pop();
+        file_queue_.pop_front();
         if ((radar_msg = dynamic_cast<RadarMessageT*> (std::get<0>(data)))) {
             writeRadarData(*radar_msg, std::get<1>(data));
             delete(radar_msg);

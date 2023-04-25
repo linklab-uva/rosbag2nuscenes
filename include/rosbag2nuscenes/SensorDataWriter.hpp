@@ -5,7 +5,7 @@
 
 #include "MessageTypes.hpp"
 #include <filesystem>
-#include <queue>
+#include <boost/circular_buffer.hpp>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -35,7 +35,7 @@ class SensorDataWriter {
         
         void writeFile();
         
-        std::queue<std::pair<SensorMessageT*, fs::path>> file_queue_;
+        boost::circular_buffer<std::pair<SensorMessageT*, fs::path>> file_queue_;
 
         std::vector<std::thread> thread_vector_;
 
