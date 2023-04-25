@@ -8,7 +8,7 @@ SensorDataWriter::SensorDataWriter(int num_workers) {
 }
 
 void SensorDataWriter::writeRadarData(RadarMessageT msg, fs::path filename) {
-    pcl::io::savePCDFileBinary(filename, msg.cloud);
+    pcl::io::savePCDFile(filename, msg.cloud);
 }
 
 void SensorDataWriter::writeLidarData(LidarMessageT msg, fs::path filename) {

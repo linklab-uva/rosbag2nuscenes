@@ -27,17 +27,9 @@ RUN ls /opt/ros/humble
 RUN . /opt/ros/humble/setup.sh && \
     colcon build --packages-select delphi_esr_msgs
 
-WORKDIR /
-
-RUN git clone https://github.com/PointCloudLibrary/pcl.git
-
-RUN mkdir /PointCloudLibrary/build/
-
-WORKDIR /PointCloudLibrary/build/
-
-RUN cmake .. && make -j2 install
 
 COPY . /rosbag2nuscenes
+
 
 RUN mkdir /rosbag2nuscenes/build
 
