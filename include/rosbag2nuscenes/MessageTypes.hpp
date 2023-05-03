@@ -15,10 +15,8 @@ struct SensorMessageT {
     virtual ~SensorMessageT() = default;
 };
 
-struct RadarPointT {
-    float x;
-    float y;
-    float z;
+struct EIGEN_ALIGN16 RadarPointT {
+    PCL_ADD_POINT4D
     int8_t dyn_prop;
     int16_t id;
     float rcs;
