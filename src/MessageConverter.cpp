@@ -6,23 +6,31 @@ MessageConverter::MessageConverter() {}
 RadarMessageT MessageConverter::getRadarMessage() {
     std::stringstream ss;
     ss << radar_ros_msg_.header.stamp.sec << radar_ros_msg_.header.stamp.nanosec;
-    RadarPointT radar_point { (float) (radar_ros_msg_.track_range * cos(radar_ros_msg_.track_angle * 3.14159/180)),
-                    (float) (radar_ros_msg_.track_range * sin(radar_ros_msg_.track_angle * 3.14159/180)),
-                    0.0,
-                    4,
-                    (int8_t) radar_ros_msg_.track_id,
-                    (int16_t) radar_ros_msg_.track_width,
-                    radar_ros_msg_.track_range_rate,
-                    radar_ros_msg_.track_lat_rate,
-                    radar_ros_msg_.track_range_rate,
-                    radar_ros_msg_.track_lat_rate,
-                    1,
-                    3,
-                    0, 0, 0, 1, 0, 0} ;
+    RadarPointT radar_point;
+    radar_point.x = (float) (radar_ros_msg_.track_range * cos(radar_ros_msg_.track_angle * 3.14159/180));
+    radar_point.y = (float) (radar_ros_msg_.track_range * sin(radar_ros_msg_.track_angle * 3.14159/180));
+    radar_point.z = 0.0;
+    radar_point.dyn_prop = (int8_t) 4;
+    radar_point.id = (int16_t) radar_ros_msg_.track_id;
+    radar_point.rcs = radar_ros_msg_.track_width;
+    radar_point.vx = radar_ros_msg_.track_range_rate;
+    radar_point.vy = radar_ros_msg_.track_lat_rate;
+    radar_point.vx_comp = radar_ros_msg_.track_range_rate;
+    radar_point.vy_comp = radar_ros_msg_.track_lat_rate;
+    radar_point.is_quality_valid = 1;
+    radar_point.ambig_state = 3;
+    radar_point.x_rms = 0;
+    radar_point.y_rms = 0;
+    radar_point.invalid_state = 0;
+    radar_point.pdh0 = 1;
+    radar_point.vx_rms = 0;
+    radar_point.vy_rms = 0;
     RadarMessageT radar_msg;
     radar_msg.timestamp = stoul(ss.str());
     radar_msg.frame_id = radar_ros_msg_.header.frame_id;
     radar_msg.cloud.push_back(radar_point);
+    radar_msg.cloud.push_back(RadarPointT{}); // Nuscenes devkit expects binary data to have buffer after valid data
+    radar_msg.cloud.width = 1;
     return radar_msg;
 }
 
