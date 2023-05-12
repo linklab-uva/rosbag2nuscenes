@@ -1,9 +1,11 @@
 #include "rosbag2nuscenes/MessageConverter.hpp"
 
 
-MessageConverter::MessageConverter() {}
+MessageConverter::MessageConverter() {
+    first_radar_timestamp = 0;
+}
 
-RadarMessageT MessageConverter::getRadarMessage() {
+RadarMessageT* MessageConverter::getRadarMessage() {
     std::stringstream ss;
     ss << radar_ros_msg_.header.stamp.sec << radar_ros_msg_.header.stamp.nanosec;
     RadarPointT radar_point;
@@ -25,32 +27,48 @@ RadarMessageT MessageConverter::getRadarMessage() {
     radar_point.pdh0 = 1;
     radar_point.vx_rms = 0;
     radar_point.vy_rms = 0;
-    RadarMessageT radar_msg;
-    radar_msg.timestamp = stoul(ss.str());
-    radar_msg.frame_id = radar_ros_msg_.header.frame_id;
-    radar_msg.cloud.push_back(radar_point);
-    radar_msg.cloud.push_back(RadarPointT{}); // Nuscenes devkit expects binary data to have buffer after valid data
-    radar_msg.cloud.width = 1;
-    return radar_msg;
+    unsigned long message_timestamp = stoul(ss.str());
+    if (!first_radar_timestamp ) {
+        radar_msg = new RadarMessageT();
+        first_radar_timestamp = message_timestamp;
+        radar_msg->timestamp = message_timestamp;
+        radar_msg->frame_id = radar_ros_msg_.header.frame_id;
+    }
+    // If timestamp is within threshold for batch, add point to cloud and return nullptr
+    if (message_timestamp - first_radar_timestamp < 10000000 ) {
+        radar_msg->cloud.push_back(radar_point);
+        return nullptr;
+    // Else return the radar message and start a new batch
+    } else {
+        radar_msg->cloud.push_back(RadarPointT{}); // Nuscenes devkit expects binary data to have buffer after valid data
+        radar_msg->cloud.width -= 1;
+        RadarMessageT* return_msg = radar_msg;
+        radar_msg = new RadarMessageT();
+        radar_msg->timestamp = message_timestamp;
+        radar_msg->frame_id = radar_ros_msg_.header.frame_id;
+        radar_msg->cloud.push_back(radar_point);
+        first_radar_timestamp = message_timestamp;
+        return return_msg;
+    }
 }
 
-LidarMessageT MessageConverter::getLidarMessage() {
-    LidarMessageT lidar_msg;
-    lidar_msg.frame_id = lidar_ros_msg_.header.frame_id;
+LidarMessageT* MessageConverter::getLidarMessage() {
+    LidarMessageT* lidar_msg = new LidarMessageT();
+    lidar_msg->frame_id = lidar_ros_msg_.header.frame_id;
     std::stringstream ss;
     ss << lidar_ros_msg_.header.stamp.sec << lidar_ros_msg_.header.stamp.nanosec;
-    lidar_msg.timestamp = stoul(ss.str());
-    pcl::fromROSMsg(lidar_ros_msg_, lidar_msg.cloud);
+    lidar_msg->timestamp = stoul(ss.str());
+    pcl::fromROSMsg(lidar_ros_msg_, lidar_msg->cloud);
     return lidar_msg;
 }
 
-CameraMessageT MessageConverter::getCameraMessage() {
-    CameraMessageT camera_msg;
-    camera_msg.frame_id = camera_ros_msg_.header.frame_id;
+CameraMessageT* MessageConverter::getCameraMessage() {
+    CameraMessageT* camera_msg = new CameraMessageT();
+    camera_msg->frame_id = camera_ros_msg_.header.frame_id;
     std::stringstream ss;
     ss << camera_ros_msg_.header.stamp.sec << camera_ros_msg_.header.stamp.nanosec;
-    camera_msg.timestamp = stoul(ss.str());
-    camera_msg.image = cv_bridge::toCvCopy(camera_ros_msg_, "rgb8")->image;
+    camera_msg->timestamp = stoul(ss.str());
+    camera_msg->image = cv_bridge::toCvCopy(camera_ros_msg_, "rgb8")->image;
     return camera_msg;
 }
 
@@ -92,4 +110,8 @@ void MessageConverter::getROSMsg(std::string type, std::shared_ptr<rosbag2_cpp::
         printf("Message type unknown, cannot deserialize.\n");
         exit(1);
     }
+}
+
+RadarMessageT* MessageConverter::getLastRadarMessage(){
+    return radar_msg;
 }
