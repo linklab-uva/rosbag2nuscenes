@@ -1,6 +1,8 @@
 #ifndef MESSAGE_CONVERTER_HPP
 #define MESSAGE_CONVERTER_HPP
 
+#define PCL_NO_PRECOMPILE
+
 #include <cstring>
 #include "MessageTypes.hpp"
 #include "delphi_esr_msgs/msg/esr_track.hpp"
@@ -18,11 +20,11 @@ class MessageConverter {
     public:
         MessageConverter();
 
-        RadarMessageT getRadarMessage();
+        RadarMessageT* getRadarMessage();
         
-        LidarMessageT getLidarMessage();
+        LidarMessageT* getLidarMessage();
 
-        CameraMessageT getCameraMessage();
+        CameraMessageT* getCameraMessage();
 
         CameraCalibrationT getCameraCalibration();
 
@@ -30,12 +32,18 @@ class MessageConverter {
 
         void getROSMsg(std::string type, std::shared_ptr<rosbag2_cpp::rosbag2_introspection_message_t> message_wrapper);
 
+        // Needed to batch Radar detections
+        RadarMessageT* getLastRadarMessage();
+
     private:
         delphi_esr_msgs::msg::EsrTrack radar_ros_msg_;
         sensor_msgs::msg::PointCloud2 lidar_ros_msg_;
         sensor_msgs::msg::CompressedImage camera_ros_msg_;
         sensor_msgs::msg::CameraInfo camera_info_ros_msg_;
         nav_msgs::msg::Odometry odometry_ros_msg_;
+        // Needed to batch Radar detections
+        unsigned long first_radar_timestamp;
+        RadarMessageT* radar_msg;
 
 
 

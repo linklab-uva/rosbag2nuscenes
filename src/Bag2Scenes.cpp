@@ -1,7 +1,7 @@
 #include "rosbag2nuscenes/Bag2Scenes.hpp"
 #include <iostream>
 
-Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file) : 
+Bag2Scenes::Bag2Scenes(const fs::path rosbag_dir, const fs::path param_file, const fs::path output_dir, int num_workers) : 
 odometry_bar_{
         indicators::option::BarWidth{80},
         indicators::option::ForegroundColor{indicators::Color::white},
@@ -42,20 +42,22 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     }
     for (YAML::Node::iterator itr = param_yaml_["SENSOR_INFO"].begin(); itr != param_yaml_["SENSOR_INFO"].end(); itr++) {
         std::string sensor_name = itr->first.as<std::string>();
+        std::string modality = sensor_name.substr(0, sensor_name.find("_"));
+        std::transform(modality.begin(), modality.end(), modality.begin(), ::tolower);
+        std::string topic = itr->second["TOPIC"].as<std::string>();
         frame_info_[itr->second["FRAME"].as<std::string>()]["previous_timestamp"] = 0;
         frame_info_[itr->second["FRAME"].as<std::string>()]["previous_token"] = "";
         frame_info_[itr->second["FRAME"].as<std::string>()]["next_token"] = generateToken();
         frame_info_[itr->second["FRAME"].as<std::string>()]["name"] = sensor_name;
         frame_info_[itr->second["FRAME"].as<std::string>()]["sensor_token"] = generateToken();
-        std::string modality = sensor_name.substr(0, sensor_name.find("_"));
-        std::string topic = itr->second["TOPIC"].as<std::string>();
+        frame_info_[itr->second["FRAME"].as<std::string>()]["modality"] = modality;
         if (topic != "null") {
             topics_of_interest_.push_back(topic);
-            if (modality == "LIDAR") {
+            if (modality == "lidar") {
                 lidar_topics_.push_back(topic);
-            } else if (modality == "RADAR") {
+            } else if (modality == "radar") {
                 radar_topics_.push_back(topic);
-            } else if (modality == "CAMERA") {
+            } else if (modality == "camera") {
                 camera_topics_.push_back(topic);
                 camera_calibs_.push_back(itr->second["CALIB"].as<std::string>());
                 topics_of_interest_.push_back(itr->second["CALIB"].as<std::string>());
@@ -74,15 +76,17 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     next_sample_token_ = generateToken();
     nbr_samples_ = 0;
     waiting_timestamp_ = 0;
+    num_workers_ = num_workers;
+    output_dir_ = output_dir;
 }
 
 void Bag2Scenes::writeScene() {
     MessageConverter message_converter;
     scene_token_ = generateToken();
-    if (!fs::exists("v1.0-mini/")) {
-        fs::create_directory("v1.0-mini");
-        fs::create_directory("samples");
-        fs::create_directory("sweeps");
+    if (!fs::exists(output_dir_ / "v1.0-mini/")) {
+        fs::create_directory(output_dir_ / "v1.0-mini");
+        fs::create_directory(output_dir_ / "samples");
+        fs::create_directory(output_dir_ / "sweeps");
     }
     std::string log_token = writeLog();
     nlohmann::json scene;
@@ -93,23 +97,23 @@ void Bag2Scenes::writeScene() {
     nlohmann::json ego_poses;
     nlohmann::json sample_data;
     nlohmann::json scenes;
-    if (fs::exists("v1.0-mini/ego_pose.json")) {
-        std::ifstream ego_poses_in("v1.0-mini/ego_pose.json");
+    if (fs::exists(output_dir_ / "v1.0-mini/ego_pose.json")) {
+        std::ifstream ego_poses_in(output_dir_ / "v1.0-mini/ego_pose.json");
         ego_poses = nlohmann::json::parse(ego_poses_in);
         ego_poses_in.close();
     }
-    if (fs::exists("v1.0-mini/sample.json")) {
-        std::ifstream sample_in("v1.0-mini/sample.json");
+    if (fs::exists(output_dir_ / "v1.0-mini/sample.json")) {
+        std::ifstream sample_in(output_dir_ / "v1.0-mini/sample.json");
         samples_ = nlohmann::json::parse(sample_in);
         sample_in.close();
     }
-    if (fs::exists("v1.0-mini/sample_data.json")) {
-        std::ifstream sample_data_in("v1.0-mini/sample_data.json");
+    if (fs::exists(output_dir_ / "v1.0-mini/sample_data.json")) {
+        std::ifstream sample_data_in(output_dir_ / "v1.0-mini/sample_data.json");
         sample_data = nlohmann::json::parse(sample_data_in);
         sample_data_in.close();
     }
-    if (fs::exists("v1.0-mini/scene.json")) {
-        std::ifstream scene_in("v1.0-mini/scene.json");
+    if (fs::exists(output_dir_ / "v1.0-mini/scene.json")) {
+        std::ifstream scene_in(output_dir_ / "v1.0-mini/scene.json");
         scenes = nlohmann::json::parse(scene_in);
         scene_in.close();
     }
@@ -119,14 +123,14 @@ void Bag2Scenes::writeScene() {
     std::thread sensor_data_thread(&Bag2Scenes::writeSampleData, this, std::ref(sample_data));
     ego_pose_thread.join();
     sensor_data_thread.join();
-    std::ofstream ego_poses_out("v1.0-mini/ego_pose.json");
+    std::ofstream ego_poses_out(output_dir_ / "v1.0-mini/ego_pose.json");
     ego_poses_out << std::setw(4) << ego_poses << std::endl;
     ego_poses_out.close();
-    std::ofstream sample_data_out("v1.0-mini/sample_data.json");
+    std::ofstream sample_data_out(output_dir_ / "v1.0-mini/sample_data.json");
     sample_data_out << std::setw(4) << sample_data << std::endl;
     sample_data_out.close();
     samples_.back()["next"] = "";
-    std::ofstream sample_out("v1.0-mini/sample.json");
+    std::ofstream sample_out(output_dir_ / "v1.0-mini/sample.json");
     sample_out << std::setw(4) << samples_ << std::endl;
     sample_out.close();
     scene["nbr_samples"] = nbr_samples_;
@@ -134,7 +138,7 @@ void Bag2Scenes::writeScene() {
     scene["name"] = bag_dir_;
     scene["description"] = param_yaml_["BAG_INFO"]["DESCRIPTION"].as<std::string>();
     scenes.push_back(scene);
-    std::ofstream scene_out("v1.0-mini/scene.json");
+    std::ofstream scene_out(output_dir_ / "v1.0-mini/scene.json");
     scene_out << std::setw(4) << scenes << std::endl;
     scene_out.close();
     writeTaxonomyFiles();
@@ -145,8 +149,8 @@ void Bag2Scenes::writeScene() {
 std::string Bag2Scenes::writeLog() {
     std::string log_token = generateToken();
     nlohmann::json logs;
-    if (fs::exists("v1.0-mini/log.json")) {
-        std::ifstream log_in("v1.0-mini/log.json");
+    if (fs::exists(output_dir_ / "v1.0-mini/log.json")) {
+        std::ifstream log_in(output_dir_ / "v1.0-mini/log.json");
         logs = nlohmann::json::parse(log_in);
         log_in.close();
     }
@@ -160,7 +164,7 @@ std::string Bag2Scenes::writeLog() {
     new_log["date_captured"] = ss.str();
     new_log["location"] = param_yaml_["BAG_INFO"]["TRACK"].as<std::string>();
     logs.push_back(new_log);
-    std::ofstream log_out("v1.0-mini/log.json");
+    std::ofstream log_out(output_dir_ / "v1.0-mini/log.json");
     log_out << std::setw(4) << logs << std::endl;
     writeMap(log_token);
     return log_token;
@@ -168,14 +172,14 @@ std::string Bag2Scenes::writeLog() {
 
 void Bag2Scenes::writeMap(std::string log_token) {
     nlohmann::json maps;
-    if (fs::exists("v1.0-mini/map.json")) {
-        std::ifstream map_in("v1.0-mini/map.json");
+    if (fs::exists(output_dir_ / "v1.0-mini/map.json")) {
+        std::ifstream map_in(output_dir_ / "v1.0-mini/map.json");
         maps = nlohmann::json::parse(map_in);
         map_in.close();
         for (nlohmann::json& map : maps) {
             if (map["category"] == param_yaml_["BAG_INFO"]["TRACK"].as<std::string>()) {
                 map["log_tokens"].push_back(log_token);
-                std::ofstream map_out("v1.0-mini/map.json");
+                std::ofstream map_out(output_dir_ / "v1.0-mini/map.json");
                 map_out << std::setw(4) << maps << std::endl;
                 map_out.close();
                 return;
@@ -188,7 +192,7 @@ void Bag2Scenes::writeMap(std::string log_token) {
     new_map["category"] = param_yaml_["BAG_INFO"]["TRACK"].as<std::string>();
     new_map["filename"] = "";
     maps.push_back(new_map);
-    std::ofstream map_out("v1.0-mini/map.json");
+    std::ofstream map_out(output_dir_ / "v1.0-mini/map.json");
     map_out << std::setw(4) << maps << std::endl;
     map_out.close();
     return;
@@ -200,6 +204,7 @@ std::string Bag2Scenes::writeSample() {
 }
 
 void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
+    std::unique_lock<std::mutex> lck(ego_pose_mutex_);
     int sensor_data_msgs = 0;
     for (rosbag2_storage::TopicInformation topic_data : bag_data_.topics_with_message_count) {
         if (std::find(topics_of_interest_.begin(), topics_of_interest_.end(), topic_data.topic_metadata.name) != topics_of_interest_.end()) {
@@ -215,10 +220,11 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
     rosbag2_cpp::SerializationFormatConverterFactory factory;
     std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer = factory.load_deserializer("cdr");
     MessageConverter message_converter;
-    SensorDataWriter data_writer;
+    SensorDataWriter data_writer(num_workers_);
     std::unordered_set<std::string> calibrated_sensors;
     fs::path filename;
     std::string filename_str;
+    lck.unlock();
     for (int i = 0; i < sensor_data_msgs; i++) {
         if (reader.has_next()) {
             auto serialized_message = reader.read_next();
@@ -237,55 +243,56 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             }
             nlohmann::json sample_data;
             if (msg_type ==  "delphi_esr_msgs/msg/EsrTrack") {
-                RadarMessageT radar_message = message_converter.getRadarMessage();
+                RadarMessageT* radar_message = message_converter.getRadarMessage();
+                if (!radar_message) continue; // Only needed if batching radar messages
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-                    writeCalibratedSensor(radar_message.frame_id, std::vector<std::vector<float>>());
+                    writeCalibratedSensor(radar_message->frame_id, std::vector<std::vector<float>>());
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
-                filename = getFilename(radar_message.frame_id, radar_message.timestamp);
-                data_writer.writeRadarData(radar_message, filename);
-                sample_data["token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[radar_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = getClosestEgoPose(radar_message.timestamp);
+                filename = getFilename(radar_message->frame_id, radar_message->timestamp);
+                sample_data["token"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[radar_message->frame_id]["sensor_token"].as<std::string>();
+                sample_data["ego_pose_token"] = getClosestEgoPose(radar_message->timestamp);
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
-                sample_data["timestamp"] = ((double)radar_message.timestamp) * pow(10, -8);
-                sample_data["prev"] = frame_info_[radar_message.frame_id]["previous_token"].as<std::string>();
-                frame_info_[radar_message.frame_id]["previous_token"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
-                frame_info_[radar_message.frame_id]["next_token"] = generateToken();
-                sample_data["next"] = frame_info_[radar_message.frame_id]["next_token"].as<std::string>();
+                sample_data["timestamp"] = ((double)radar_message->timestamp) * pow(10, -8);
+                sample_data["prev"] = frame_info_[radar_message->frame_id]["previous_token"].as<std::string>();
+                frame_info_[radar_message->frame_id]["previous_token"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+                frame_info_[radar_message->frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+                data_writer.writeSensorData(radar_message, filename);
             } else if (msg_type == "sensor_msgs/msg/CompressedImage") {
-                CameraMessageT camera_message = message_converter.getCameraMessage();
-                filename = getFilename(camera_message.frame_id, camera_message.timestamp);
-                data_writer.writeCameraData(camera_message, filename);
-                sample_data["token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[camera_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = getClosestEgoPose(camera_message.timestamp);
-                sample_data["height"] = camera_message.image.rows;
-                sample_data["width"] = camera_message.image.cols;
-                sample_data["timestamp"] = ((double)camera_message.timestamp) * pow(10, -8);
-                sample_data["prev"] = frame_info_[camera_message.frame_id]["previous_token"].as<std::string>();
-                frame_info_[camera_message.frame_id]["previous_token"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
-                frame_info_[camera_message.frame_id]["next_token"] = generateToken();
-                sample_data["next"] = frame_info_[camera_message.frame_id]["next_token"].as<std::string>();
+                CameraMessageT* camera_message = message_converter.getCameraMessage();
+                filename = getFilename(camera_message->frame_id, camera_message->timestamp);
+                sample_data["token"] = frame_info_[camera_message->frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[camera_message->frame_id]["sensor_token"].as<std::string>();
+                sample_data["ego_pose_token"] = getClosestEgoPose(camera_message->timestamp);
+                sample_data["height"] = camera_message->image.rows;
+                sample_data["width"] = camera_message->image.cols;
+                sample_data["timestamp"] = ((double)camera_message->timestamp) * pow(10, -8);
+                sample_data["prev"] = frame_info_[camera_message->frame_id]["previous_token"].as<std::string>();
+                frame_info_[camera_message->frame_id]["previous_token"] = frame_info_[camera_message->frame_id]["next_token"].as<std::string>();
+                frame_info_[camera_message->frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[camera_message->frame_id]["next_token"].as<std::string>();
+                data_writer.writeSensorData(camera_message, filename);
             } else if (msg_type == "sensor_msgs/msg/PointCloud2") {
-                LidarMessageT lidar_message = message_converter.getLidarMessage();
+                LidarMessageT* lidar_message = message_converter.getLidarMessage();
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
-                    writeCalibratedSensor(lidar_message.frame_id, std::vector<std::vector<float>>());
+                    writeCalibratedSensor(lidar_message->frame_id, std::vector<std::vector<float>>());
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
-                filename = getFilename(lidar_message.frame_id, lidar_message.timestamp);
-                data_writer.writeLidarData(lidar_message, filename);
-                sample_data["token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
-                sample_data["calibrated_sensor_token"] = frame_info_[lidar_message.frame_id]["sensor_token"].as<std::string>();
-                sample_data["ego_pose_token"] = getClosestEgoPose(lidar_message.timestamp);
+                filename = getFilename(lidar_message->frame_id, lidar_message->timestamp);
+                sample_data["token"] = frame_info_[lidar_message->frame_id]["next_token"].as<std::string>();
+                sample_data["calibrated_sensor_token"] = frame_info_[lidar_message->frame_id]["sensor_token"].as<std::string>();
+                sample_data["ego_pose_token"] = getClosestEgoPose(lidar_message->timestamp);
                 sample_data["height"] = 0;
                 sample_data["width"] = 0;
-                sample_data["timestamp"] = ((double)lidar_message.timestamp) * pow(10, -8);
-                sample_data["prev"] = frame_info_[lidar_message.frame_id]["previous_token"].as<std::string>();
-                frame_info_[lidar_message.frame_id]["previous_token"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
-                frame_info_[lidar_message.frame_id]["next_token"] = generateToken();
-                sample_data["next"] = frame_info_[lidar_message.frame_id]["next_token"].as<std::string>();
+                sample_data["timestamp"] = ((double)lidar_message->timestamp) * pow(10, -8);
+                sample_data["prev"] = frame_info_[lidar_message->frame_id]["previous_token"].as<std::string>();
+                frame_info_[lidar_message->frame_id]["previous_token"] = frame_info_[lidar_message->frame_id]["next_token"].as<std::string>();
+                frame_info_[lidar_message->frame_id]["next_token"] = generateToken();
+                sample_data["next"] = frame_info_[lidar_message->frame_id]["next_token"].as<std::string>();
+                data_writer.writeSensorData(lidar_message, filename);
             } else if (msg_type == "sensor_msgs/msg/CameraInfo") {
                 CameraCalibrationT camera_calibration = message_converter.getCameraCalibration();
                 if (calibrated_sensors.find(serialized_message->topic_name) == calibrated_sensors.end()) {
@@ -293,6 +300,9 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
                     calibrated_sensors.insert({serialized_message->topic_name});
                 }
                 continue;
+            } else {
+                printf("Message filtering broken... Check your param file.\n");
+                exit(1);
             }
             sample_data["sample_token"] = current_sample_token_;
             filename_str = filename.u8string();
@@ -302,9 +312,33 @@ void Bag2Scenes::writeSampleData(nlohmann::json& previous_data) {
             previous_data.push_back(sample_data);
         }
     }
+    // ******** Only needed if batching radar messages ******** //
+    nlohmann::json sample_data;
+    RadarMessageT* radar_message = message_converter.getLastRadarMessage();
+    filename = getFilename(radar_message->frame_id, radar_message->timestamp);
+    sample_data["token"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+    sample_data["calibrated_sensor_token"] = frame_info_[radar_message->frame_id]["sensor_token"].as<std::string>();
+    sample_data["ego_pose_token"] = getClosestEgoPose(radar_message->timestamp);
+    sample_data["height"] = 0;
+    sample_data["width"] = 0;
+    sample_data["timestamp"] = ((double)radar_message->timestamp) * pow(10, -8);
+    sample_data["prev"] = frame_info_[radar_message->frame_id]["previous_token"].as<std::string>();
+    frame_info_[radar_message->frame_id]["previous_token"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+    frame_info_[radar_message->frame_id]["next_token"] = generateToken();
+    sample_data["next"] = frame_info_[radar_message->frame_id]["next_token"].as<std::string>();
+    data_writer.writeSensorData(radar_message, filename);
+    sample_data["sample_token"] = current_sample_token_;
+    filename_str = filename.u8string();
+    sample_data["filename"] = filename_str;
+    sample_data["fileformat"] = filename_str.substr(filename_str.find('.')+1);
+    sample_data["is_key_frame"] = (bool) (filename_str.find("samples") != std::string::npos);
+    previous_data.push_back(sample_data);
+    //  ******************************************************* //
+    data_writer.close();
 }
 
 void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
+    std::unique_lock<std::mutex> lck(ego_pose_mutex_);
     std::string odometry_topic = param_yaml_["BAG_INFO"]["ODOM_TOPIC"].as<std::string>();
     int odometry_msgs = 0;
     for (rosbag2_storage::TopicInformation topic_data : bag_data_.topics_with_message_count) {
@@ -320,6 +354,7 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
     reader.set_filter(storage_filter);
     rosbag2_cpp::SerializationFormatConverterFactory factory;
     std::unique_ptr<rosbag2_cpp::converter_interfaces::SerializationFormatDeserializer> cdr_deserializer = factory.load_deserializer("cdr");
+    lck.unlock();
     MessageConverter message_converter;
     for (int i = 0; i < odometry_msgs; i++) {
         if (reader.has_next()) {
@@ -353,8 +388,8 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
 
 void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::vector<float>> camera_intrinsic) {
     nlohmann::json calibrated_sensors;
-    if (fs::exists("v1.0-mini/calibrated_sensor.json")) {
-        std::ifstream calibrated_sensor_in("v1.0-mini/calibrated_sensor.json");
+    if (fs::exists(output_dir_ / "v1.0-mini/calibrated_sensor.json")) {
+        std::ifstream calibrated_sensor_in(output_dir_ / "v1.0-mini/calibrated_sensor.json");
         calibrated_sensors = nlohmann::json::parse(calibrated_sensor_in);
         calibrated_sensor_in.close();
     }
@@ -379,14 +414,21 @@ void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::ve
                 euler_angles = {0.0, 0.0, 0.0};
             }
             Eigen::Quaternionf quat;
-            quat = Eigen::AngleAxisf(euler_angles[0], Eigen::Vector3f::UnitX()) 
-                    * Eigen::AngleAxisf(euler_angles[1], Eigen::Vector3f::UnitY())
-                    * Eigen::AngleAxisf(euler_angles[2], Eigen::Vector3f::UnitZ());
+            if (frame_info_[channel]["modality"].as<std::string>() == "camera") {
+                quat = Eigen::AngleAxisf(euler_angles[2] - 0.5 * M_PI, Eigen::Vector3f::UnitZ())
+                     * Eigen::AngleAxisf(euler_angles[1], Eigen::Vector3f::UnitY())
+                     * Eigen::AngleAxisf(euler_angles[0] - 0.5 * M_PI, Eigen::Vector3f::UnitX());
+                
+            } else {
+                quat = Eigen::AngleAxisf(euler_angles[2], Eigen::Vector3f::UnitZ()) 
+                     * Eigen::AngleAxisf(euler_angles[1], Eigen::Vector3f::UnitY())
+                     * Eigen::AngleAxisf(euler_angles[0], Eigen::Vector3f::UnitX());
+            }
             std::vector<float> wxyz = {quat.w(), quat.x(), quat.y(), quat.z()};
             calibrated_sensor["rotation"] = wxyz;
             calibrated_sensor["camera_intrinsic"] = camera_intrinsic;
             calibrated_sensors.push_back(calibrated_sensor);
-            std::ofstream calibrated_sensor_out("v1.0-mini/calibrated_sensor.json");
+            std::ofstream calibrated_sensor_out(output_dir_ / "v1.0-mini/calibrated_sensor.json");
             calibrated_sensor_out << std::setw(4) << calibrated_sensors << std::endl;
             calibrated_sensor_out.close();
         }
@@ -397,41 +439,35 @@ void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::ve
 std::string Bag2Scenes::writeSensor(std::string channel) {
     nlohmann::json sensors;
     std::string sensor_token;
-    if (!fs::exists("v1.0-mini/sensor.json")) {
+    if (!fs::exists(output_dir_ / "v1.0-mini/sensor.json")) {
         nlohmann::json sensor;
         sensor_token = generateToken();
         sensor["token"] = sensor_token;
-        std::string modality = channel.substr(0, channel.find("_"));
-        sensor["channel"] = channel;
-        std::transform(modality.begin(), modality.end(), modality.begin(), ::tolower);
-        sensor["modality"] = modality;
         std::string directory = frame_info_[channel]["name"].as<std::string>();
-        std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
-        fs::create_directory(fs::path("samples") / directory);
-        fs::create_directory(fs::path("sweeps") / directory);
+        sensor["channel"] = directory;
+        sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
+        fs::create_directory(output_dir_ / fs::path("samples") / directory);
+        fs::create_directory(output_dir_ / fs::path("sweeps") / directory);
         sensors.push_back(sensor);
-        std::ofstream sensor_out("v1.0-mini/sensor.json");
+        std::ofstream sensor_out(output_dir_ / "v1.0-mini/sensor.json");
         sensor_out << std::setw(4) << sensors << std::endl;
     } else {
-        std::ifstream sensor_in("v1.0-mini/sensor.json");
+        std::ifstream sensor_in(output_dir_ / "v1.0-mini/sensor.json");
+        std::string directory = frame_info_[channel]["name"].as<std::string>();
         sensors = nlohmann::json::parse(sensor_in);
         sensor_in.close();
         for (nlohmann::json sensor : sensors) {
-            if (sensor["channel"] == channel) return sensor["token"];
+            if (sensor["channel"] == directory) return sensor["token"];
         }
         nlohmann::json sensor;
         sensor_token = generateToken();
         sensor["token"] = sensor_token;
-        std::string modality = channel.substr(0, channel.find("_"));
-        sensor["channel"] = channel;
-        std::transform(modality.begin(), modality.end(), modality.begin(), ::tolower);
-        sensor["modality"] = modality;
-        std::string directory = frame_info_[channel]["name"].as<std::string>();
-        std::transform(directory.begin(), directory.end(), directory.begin(), ::toupper);
-        fs::create_directory(fs::path("samples") / directory);
-        fs::create_directory(fs::path("sweeps") / directory);
+        sensor["channel"] = directory;
+        sensor["modality"] = frame_info_[channel]["modality"].as<std::string>();
+        fs::create_directory(output_dir_ / fs::path("samples") / directory);
+        fs::create_directory(output_dir_ / fs::path("sweeps") / directory);
         sensors.push_back(sensor);
-        std::ofstream sensor_out("v1.0-mini/sensor.json");
+        std::ofstream sensor_out(output_dir_ / "v1.0-mini/sensor.json");
         sensor_out << std::setw(4) << sensors << std::endl;
     }
     return sensor_token;
@@ -444,37 +480,37 @@ void Bag2Scenes::writeTaxonomyFiles() {
     nlohmann::json instance;
     nlohmann::json annotation;
     annotation["token"] = generateToken();
-    if (!fs::exists("v1.0-mini/category.json")) {
+    if (!fs::exists(output_dir_ / "v1.0-mini/category.json")) {
         category["token"] = generateToken();
         category["name"] = "";
         category["description"] = "";
         nlohmann::json categories;
         categories.push_back(category);
-        std::ofstream category_out("v1.0-mini/category.json");
+        std::ofstream category_out(output_dir_ / "v1.0-mini/category.json");
         category_out << std::setw(4) << categories << std::endl;
         category_out.close();
     }
-    if (!fs::exists("v1.0-mini/attribute.json")) {
+    if (!fs::exists(output_dir_ / "v1.0-mini/attribute.json")) {
         attribute["token"] = generateToken();
         attribute["name"] = "";
         attribute["description"] = "";
         nlohmann::json attributes;
         attributes.push_back(attribute);
-        std::ofstream attribute_out("v1.0-mini/attribute.json");
+        std::ofstream attribute_out(output_dir_ / "v1.0-mini/attribute.json");
         attribute_out << std::setw(4) << attributes << std::endl;
         attribute_out.close();
     }
-    if (!fs::exists("v1.0-mini/visibility.json")) {
+    if (!fs::exists(output_dir_ / "v1.0-mini/visibility.json")) {
         visibility["token"] = "1";
         visibility["description"] = "";
         visibility["level"] = "";
         nlohmann::json visibilities;
         visibilities.push_back(visibility);
-        std::ofstream visibility_out("v1.0-mini/visibility.json");
+        std::ofstream visibility_out(output_dir_ / "v1.0-mini/visibility.json");
         visibility_out << std::setw(4) << visibilities << std::endl;
         visibility_out.close();
     }
-    if (!fs::exists("v1.0-mini/instance.json")) {
+    if (!fs::exists(output_dir_ / "v1.0-mini/instance.json")) {
         instance["token"] = generateToken();
         instance["category_token"] = category["token"];
         instance["nbr_annotations"] = 0;
@@ -482,11 +518,11 @@ void Bag2Scenes::writeTaxonomyFiles() {
         instance["last_annotation_token"] = annotation["token"];
         nlohmann::json instances;
         instances.push_back(instance);
-        std::ofstream instance_out("v1.0-mini/instance.json");
+        std::ofstream instance_out(output_dir_ / "v1.0-mini/instance.json");
         instance_out << std::setw(4) << instances << std::endl;
         instance_out.close();
     }
-    if (!fs::exists("v1.0-mini/sample_annotation.json")) {
+    if (!fs::exists(output_dir_ / "v1.0-mini/sample_annotation.json")) {
         annotation["sample_token"] = current_sample_token_;
         annotation["instance_token"] = instance["token"];
         annotation["visibility_token"] = visibility["token"];
@@ -500,7 +536,7 @@ void Bag2Scenes::writeTaxonomyFiles() {
         annotation["num_radar_pts"] = 0;
         nlohmann::json annotations;
         annotations.push_back(annotation);
-        std::ofstream annotation_out("v1.0-mini/sample_annotation.json");
+        std::ofstream annotation_out(output_dir_ / "v1.0-mini/sample_annotation.json");
         annotation_out << std::setw(4) << annotations << std::endl;
         annotation_out.close();
     }
@@ -508,7 +544,7 @@ void Bag2Scenes::writeTaxonomyFiles() {
 
 std::string Bag2Scenes::generateToken() {
     char token[33];
-    for (int i = 0; i < 33; i++) {
+    for (int i = 0; i < 32; i++) {
         sprintf(token + i, "%x", rand() % 16);
     }
     return std::string(token);
@@ -544,10 +580,10 @@ fs::path Bag2Scenes::getFilename(std::string channel, unsigned long timestamp) {
     } else {
         base_dir = "sweeps";
     }
-    int size_s = std::snprintf( nullptr, 0, "%s/%s/%s__%s__%lu%s", base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str()) + 1; // Terminate with '\0'
+    int size_s = std::snprintf( nullptr, 0, "%s/%s/%s/%s__%s__%lu%s", output_dir_.c_str(), base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str()) + 1; // Terminate with '\0'
     size = static_cast<size_t>( size_s );
     buf = std::unique_ptr<char[]>( new char[ size ] );
-    std::snprintf( buf.get(), size, "%s/%s/%s__%s__%lu%s", base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str());
+    std::snprintf( buf.get(), size, "%s/%s/%s/%s__%s__%lu%s", output_dir_.c_str(), base_dir.c_str(), directory.c_str(),bag_dir_.c_str(), directory.c_str(), timestamp, extension.c_str());
     return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
 }
 
@@ -586,7 +622,7 @@ std::string Bag2Scenes::getClosestEgoPose(unsigned long timestamp) {
         ego_pose_ready_.wait(lck);
     }
     std::string previous_token;
-    unsigned long previous_time_difference;
+    unsigned long previous_time_difference = INT64_MAX;
     for (unsigned long i = 0; i < ego_pose_queue_.size(); i++) {
         if (std::get<0>(ego_pose_queue_[i]) >= timestamp) {
             std::string return_token;
