@@ -78,6 +78,7 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     waiting_timestamp_ = 0;
     num_workers_ = num_workers;
     output_dir_ = output_dir;
+    ego_pose_done_ = false;
 }
 
 void Bag2Scenes::writeScene() {
@@ -123,6 +124,7 @@ void Bag2Scenes::writeScene() {
     std::thread sensor_data_thread(&Bag2Scenes::writeSampleData, this, std::ref(sample_data));
     ego_pose_thread.join();
     sensor_data_thread.join();
+    std::cout << "Writing Files..." << std::endl;
     std::ofstream ego_poses_out(output_dir_ / "v1.0-mini/ego_pose.json");
     ego_poses_out << ego_poses.dump(4) << std::endl;
     ego_poses_out.close();
@@ -385,6 +387,7 @@ void Bag2Scenes::writeEgoPose(nlohmann::json& previous_poses) {
         });
         progress_bars_.tick<1>();
     }
+    ego_pose_done_ = true;
 }
 
 void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::vector<float>> camera_intrinsic) {
@@ -620,7 +623,7 @@ std::string Bag2Scenes::getClosestEgoPose(unsigned long timestamp) {
         waiting_timestamp_ = timestamp;
         ego_pose_ready_.wait(lck);
     }
-    while (std::get<0>(ego_pose_queue_.back()) < timestamp) {
+    while (std::get<0>(ego_pose_queue_.back()) < timestamp && !ego_pose_done_) {
         waiting_timestamp_ = timestamp;
         ego_pose_ready_.wait(lck);
     }
@@ -641,6 +644,5 @@ std::string Bag2Scenes::getClosestEgoPose(unsigned long timestamp) {
         previous_time_difference = timestamp - std::get<0>(ego_pose_queue_[i]);
         previous_token = std::get<1>(ego_pose_queue_[i]);
     }
-    printf("Thread synchronization failed");
-    exit(1);
+    return std::get<1>(ego_pose_queue_.back());
 }

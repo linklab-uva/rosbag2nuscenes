@@ -85,6 +85,7 @@ class Bag2Scenes {
         unsigned long previous_sampled_timestamp_;
         std::unordered_set<std::string> sensors_sampled_;
         int nbr_samples_;
+	bool ego_pose_done_;
         nlohmann::json samples_;
         std::string previous_sample_token_;
         std::string next_sample_token_;
