@@ -124,14 +124,14 @@ void Bag2Scenes::writeScene() {
     ego_pose_thread.join();
     sensor_data_thread.join();
     std::ofstream ego_poses_out(output_dir_ / "v1.0-mini/ego_pose.json");
-    ego_poses_out << std::setw(4) << ego_poses << std::endl;
+    ego_poses_out << ego_poses.dump(4) << std::endl;
     ego_poses_out.close();
     std::ofstream sample_data_out(output_dir_ / "v1.0-mini/sample_data.json");
-    sample_data_out << std::setw(4) << sample_data << std::endl;
+    sample_data_out << sample_data.dump(4) << std::endl;
     sample_data_out.close();
     samples_.back()["next"] = "";
     std::ofstream sample_out(output_dir_ / "v1.0-mini/sample.json");
-    sample_out << std::setw(4) << samples_ << std::endl;
+    sample_out << samples_.dump(4) << std::endl;
     sample_out.close();
     scene["nbr_samples"] = nbr_samples_;
     scene["last_sample_token"] = current_sample_token_;
@@ -139,7 +139,7 @@ void Bag2Scenes::writeScene() {
     scene["description"] = param_yaml_["BAG_INFO"]["DESCRIPTION"].as<std::string>();
     scenes.push_back(scene);
     std::ofstream scene_out(output_dir_ / "v1.0-mini/scene.json");
-    scene_out << std::setw(4) << scenes << std::endl;
+    scene_out << scenes.dump(4) << std::endl;
     scene_out.close();
     writeTaxonomyFiles();
     indicators::show_console_cursor(true);
@@ -165,7 +165,8 @@ std::string Bag2Scenes::writeLog() {
     new_log["location"] = param_yaml_["BAG_INFO"]["TRACK"].as<std::string>();
     logs.push_back(new_log);
     std::ofstream log_out(output_dir_ / "v1.0-mini/log.json");
-    log_out << std::setw(4) << logs << std::endl;
+    log_out << logs.dump(4) << std::endl;
+    log_out.close();
     writeMap(log_token);
     return log_token;
 }
@@ -180,7 +181,7 @@ void Bag2Scenes::writeMap(std::string log_token) {
             if (map["category"] == param_yaml_["BAG_INFO"]["TRACK"].as<std::string>()) {
                 map["log_tokens"].push_back(log_token);
                 std::ofstream map_out(output_dir_ / "v1.0-mini/map.json");
-                map_out << std::setw(4) << maps << std::endl;
+                map_out << maps.dump(4) << std::endl;
                 map_out.close();
                 return;
             }
@@ -193,7 +194,7 @@ void Bag2Scenes::writeMap(std::string log_token) {
     new_map["filename"] = "";
     maps.push_back(new_map);
     std::ofstream map_out(output_dir_ / "v1.0-mini/map.json");
-    map_out << std::setw(4) << maps << std::endl;
+    map_out << maps.dump(4) << std::endl;
     map_out.close();
     return;
 }
@@ -429,7 +430,7 @@ void Bag2Scenes::writeCalibratedSensor(std::string frame_id, std::vector<std::ve
             calibrated_sensor["camera_intrinsic"] = camera_intrinsic;
             calibrated_sensors.push_back(calibrated_sensor);
             std::ofstream calibrated_sensor_out(output_dir_ / "v1.0-mini/calibrated_sensor.json");
-            calibrated_sensor_out << std::setw(4) << calibrated_sensors << std::endl;
+            calibrated_sensor_out << calibrated_sensors.dump(4) << std::endl;
             calibrated_sensor_out.close();
         }
         joint = joint.next_sibling();
@@ -450,7 +451,8 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         fs::create_directory(output_dir_ / fs::path("sweeps") / directory);
         sensors.push_back(sensor);
         std::ofstream sensor_out(output_dir_ / "v1.0-mini/sensor.json");
-        sensor_out << std::setw(4) << sensors << std::endl;
+        sensor_out << sensors.dump(4) << std::endl;
+        sensor_out.close();
     } else {
         std::ifstream sensor_in(output_dir_ / "v1.0-mini/sensor.json");
         std::string directory = frame_info_[channel]["name"].as<std::string>();
@@ -468,7 +470,8 @@ std::string Bag2Scenes::writeSensor(std::string channel) {
         fs::create_directory(output_dir_ / fs::path("sweeps") / directory);
         sensors.push_back(sensor);
         std::ofstream sensor_out(output_dir_ / "v1.0-mini/sensor.json");
-        sensor_out << std::setw(4) << sensors << std::endl;
+        sensor_out << sensors.dump(4) << std::endl;
+        sensor_out.close();
     }
     return sensor_token;
 }
@@ -487,7 +490,7 @@ void Bag2Scenes::writeTaxonomyFiles() {
         nlohmann::json categories;
         categories.push_back(category);
         std::ofstream category_out(output_dir_ / "v1.0-mini/category.json");
-        category_out << std::setw(4) << categories << std::endl;
+        category_out << categories.dump(4) << std::endl;
         category_out.close();
     }
     if (!fs::exists(output_dir_ / "v1.0-mini/attribute.json")) {
@@ -497,7 +500,7 @@ void Bag2Scenes::writeTaxonomyFiles() {
         nlohmann::json attributes;
         attributes.push_back(attribute);
         std::ofstream attribute_out(output_dir_ / "v1.0-mini/attribute.json");
-        attribute_out << std::setw(4) << attributes << std::endl;
+        attribute_out << attributes.dump(4) << std::endl;
         attribute_out.close();
     }
     if (!fs::exists(output_dir_ / "v1.0-mini/visibility.json")) {
@@ -507,7 +510,7 @@ void Bag2Scenes::writeTaxonomyFiles() {
         nlohmann::json visibilities;
         visibilities.push_back(visibility);
         std::ofstream visibility_out(output_dir_ / "v1.0-mini/visibility.json");
-        visibility_out << std::setw(4) << visibilities << std::endl;
+        visibility_out << visibilities.dump(4) << std::endl;
         visibility_out.close();
     }
     if (!fs::exists(output_dir_ / "v1.0-mini/instance.json")) {
@@ -519,7 +522,7 @@ void Bag2Scenes::writeTaxonomyFiles() {
         nlohmann::json instances;
         instances.push_back(instance);
         std::ofstream instance_out(output_dir_ / "v1.0-mini/instance.json");
-        instance_out << std::setw(4) << instances << std::endl;
+        instance_out << instances.dump(4) << std::endl;
         instance_out.close();
     }
     if (!fs::exists(output_dir_ / "v1.0-mini/sample_annotation.json")) {
@@ -537,7 +540,7 @@ void Bag2Scenes::writeTaxonomyFiles() {
         nlohmann::json annotations;
         annotations.push_back(annotation);
         std::ofstream annotation_out(output_dir_ / "v1.0-mini/sample_annotation.json");
-        annotation_out << std::setw(4) << annotations << std::endl;
+        annotation_out << annotations.dump(4) << std::endl;
         annotation_out.close();
     }
 }
