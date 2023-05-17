@@ -15,6 +15,7 @@ sensor_data_bar_{
     indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}}
 },
 progress_bars_(sensor_data_bar_, odometry_bar_) {
+    srand(time(0));
     // Read Parameter File
     try {
         param_yaml_ = YAML::LoadFile(param_file);
@@ -69,7 +70,6 @@ progress_bars_(sensor_data_bar_, odometry_bar_) {
     }
     reader.close();
     bag_dir_ = rosbag_dir.parent_path().filename();
-    srand(time(0));
     indicators::show_console_cursor(false);
     previous_sampled_timestamp_ = bag_data_.starting_time.time_since_epoch().count();
     previous_sample_token_ = "";
