@@ -102,12 +102,12 @@ void SensorDataWriter::writeFile() {
     RadarMessageT* radar_msg;
     LidarMessageT* lidar_msg;
     CameraMessageT* camera_msg;
-    while (!finished_) {
+    while (!finished_ || !file_queue_.empty()) {
         std::unique_lock<std::mutex> lck(queue_mutex_);
         while(file_queue_.empty() && !finished_) {
             queue_empty_.wait(lck);
         }
-        if (finished_) return;
+        if (finished_ && file_queue_.empty()) return;
         std::pair<SensorMessageT*, fs::path> data = file_queue_.front();
         file_queue_.pop_front();
         if ((radar_msg = dynamic_cast<RadarMessageT*> (std::get<0>(data)))) {
